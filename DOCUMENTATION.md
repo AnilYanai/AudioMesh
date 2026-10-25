@@ -177,12 +177,30 @@ The receiver is a standalone, lightweight daemon listening on port `8001`:
     - Sink side: `VoiceMorph_Sink` (`media.class=Audio/Sink`) — receiving converted audio.
     - Source side: `VoiceMorph_Mic` (`media.class=Audio/Source`) — exposing native capture ports (`capture_FL`, `capture_FR`) that WirePlumber, Discord, and Chrome automatically link to.
 - **Desktop/Call Audio Capture**:
-  - Captures the Target PC's speaker/headphone output using `pw-record -P stream.capture.sink=true --rate=24000 --format=s16 --channels=1 -`.
+  - Captures the Target PC's speaker/headphone output using `pw-record -P stream.capture.sink=true --rate=48000 --format=s16 --channels=2 -`.
   - Streams the desktop audio over `WS /pc_audio` to the mobile phone.
 - **REST & WebSocket Endpoints**:
   - `GET /status`: Health check queried by the server and mobile UI.
   - `POST /audio`: Ingestion of converted PCM audio for the virtual microphone.
   - `WS /pc_audio`: Live binary stream of Target PC speaker/call audio.
+
+---
+
+### How Python Acts as a Driver (User Space vs. Kernel Space)
+
+A common engineering question: *Why is this driver written in Python instead of low-level C?*
+
+Traditional hardware drivers (for USB audio interfaces or motherboard sound chips) must be written in **C / C++ running in Kernel Space (Ring 0)** to manipulate physical PCIe/USB electrical registers. However:
+1. **User Space (Ring 3) Virtual Nodes**:
+   - Modern Linux audio servers (PipeWire) are written in C. PipeWire exposes an IPC interface that allows user-space programs to create virtual audio endpoints dynamically.
+   - When Python runs `pw-loopback`, PipeWire's C core registers `"VoiceMorph Virtual Microphone"` directly with the OS audio subsystem.
+   - Applications like Discord, Zoom, and Chrome interact with it exactly like a physical USB microphone.
+2. **The Conductor Model**:
+   - PipeWire's C engine provides the low-latency audio buffer and driver interface.
+   - Python acts as the network conductor: receiving converted audio over Wi-Fi, writing bytes into the PipeWire sink, and capturing desktop monitor output.
+3. **The 2 Running Services (Tasks)**:
+   - **Task 1 (Port 8000 - Voice Server)**: CPU-heavy voice conversion engine and HTTPS web app host.
+   - **Task 2 (Port 8001 - Target Receiver)**: Featherweight (~0% CPU) audio driver bridge to Discord. Both run seamlessly via `./start_all.sh` or across two separate PCs.
 
 ---
 
