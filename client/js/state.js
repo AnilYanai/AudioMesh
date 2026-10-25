@@ -73,7 +73,7 @@ export const state = {
     channels: 2,
     nextPlayTime: 0,
     isFirstChunk: true,
-    jitterCushionSec: 0.200,    // 200ms gapless buffer
+    jitterCushionSec: 0.050,    // 50ms low-latency cushion for video lip-sync
     gainNode: null,
     highpassNode: null,
     presenceNode: null,

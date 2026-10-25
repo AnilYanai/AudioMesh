@@ -220,16 +220,16 @@ export function playPcAudioChunk(arrayBuffer) {
 
   const now = ctx.currentTime;
 
-  // Ultra-Smooth Jitter Buffer (Mathematically Gapless Playback)
+  // Ultra-Low-Latency Jitter Buffer (Video Lip-Sync Optimized)
   if (state.pcAudio.isFirstChunk) {
-    state.pcAudio.nextPlayTime = now + state.pcAudio.jitterCushionSec; // 200ms initial cushion on startup
+    state.pcAudio.nextPlayTime = now + state.pcAudio.jitterCushionSec; // 50ms initial cushion on startup
     state.pcAudio.isFirstChunk = false;
-  } else if (now > state.pcAudio.nextPlayTime + 0.150) {
-    // True network stall (>150ms of dead silence) -> gently re-cushion
+  } else if (now > state.pcAudio.nextPlayTime + 0.060) {
+    // Late packet arrival -> gently re-cushion at tight 50ms
     state.pcAudio.nextPlayTime = now + state.pcAudio.jitterCushionSec;
-  } else if (state.pcAudio.nextPlayTime > now + 0.450) {
-    // Soft clock-drift cap: if buffer accumulated >450ms from background tab, gently catch up
-    state.pcAudio.nextPlayTime = now + 0.250;
+  } else if (state.pcAudio.nextPlayTime > now + 0.090) {
+    // Tight clock-drift cap: if buffer accumulated >90ms, instantly snap back to real-time sync!
+    state.pcAudio.nextPlayTime = now + state.pcAudio.jitterCushionSec;
   }
 
   // Gapless, seamless playback:

@@ -208,7 +208,7 @@ async def websocket_pc_audio(websocket: WebSocket):
             cmd = [
                 "pw-record",
                 "-P", "stream.capture.sink=true",
-                "--latency=40ms",
+                "--latency=20ms",
                 "--media-type=Audio",
                 "--media-category=Playback",
                 "--media-role=Music",
@@ -219,9 +219,9 @@ async def websocket_pc_audio(websocket: WebSocket):
             ]
             proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, bufsize=0, stderr=subprocess.DEVNULL)
             loop = asyncio.get_running_loop()
-            # 8192 bytes = 2048 stereo frames (~42.66ms of rock-solid 48kHz audio)
+            # 4096 bytes = 1024 stereo frames (~21.33ms low-latency chunk for video lip-sync)
             while True:
-                chunk = await loop.run_in_executor(None, read_exact_bytes, proc.stdout, 8192)
+                chunk = await loop.run_in_executor(None, read_exact_bytes, proc.stdout, 4096)
                 if not chunk:
                     break
                 await websocket.send_bytes(chunk)
