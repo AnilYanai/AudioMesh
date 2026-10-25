@@ -1,102 +1,81 @@
+"""
+VoiceMorph FastAPI Server.
+
+Main HTTP/WebSocket application entry point. Coordinates:
+1. Dual-engine AI and Fast-DSP voice conversion worker threads.
+2. Two-way full-duplex audio routing between Mobile Client and Target PC Virtual Mic.
+3. Proxy bridge for Target PC desktop and call audio (Discord/WhatsApp) downlink.
+"""
+
 import os
 import sys
 import json
-import socket
 import asyncio
 import logging
+from contextlib import asynccontextmanager
+
 import numpy as np
 import soundfile as sf
+import websockets
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-# Add parent directory to path
+# Add parent directory to path to enable package imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from server.config import (
+    routing_config,
+    get_local_ip,
+    get_ssl_kwargs,
+    INPUT_SAMPLE_RATE,
+    MIN_AUDIO_BYTES,
+    DEFAULT_SERVER_PORT
+)
+from server.target_client import check_target_pc, forward_to_target_pc
 from server.voice_engine import VoiceEngine
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("VoiceServer")
 
-from contextlib import asynccontextmanager
-import base64
-import urllib.request
-import websockets
+# Global singleton voice conversion engine
+engine: VoiceEngine = None
 
-engine = None
 
-routing_config = {
-    "target_pc_ip": "127.0.0.1",
-    "target_pc_port": 8001,
-    "target_pc_enabled": True,
-    "mobile_speaker_enabled": True
-}
-
-def check_target_pc(ip, port=8001):
-    try:
-        url = f"http://{ip}:{port}/status"
-        req = urllib.request.Request(url, headers={"User-Agent": "VoiceMorphServer"})
-        with urllib.request.urlopen(req, timeout=1.5) as resp:
-            if resp.status == 200:
-                data = json.loads(resp.read().decode())
-                return True, data
-    except Exception as e:
-        return False, str(e)
-    return False, "Unreachable"
-
-async def forward_to_target_pc(pcm_bytes, sr, ip, port):
-    try:
-        b64 = base64.b64encode(pcm_bytes).decode("ascii")
-        url = f"http://{ip}:{port}/audio"
-        payload = json.dumps({"pcm_b64": b64, "sample_rate": sr}).encode("utf-8")
-        
-        def _post():
-            req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
-            with urllib.request.urlopen(req, timeout=5.0) as resp:
-                return resp.status
-                
-        status = await asyncio.to_thread(_post)
-        logger.info(f"📡 [Target PC] Stream delivered to Virtual Mic on {ip}:{port} (HTTP {status})")
-    except Exception as e:
-        logger.warning(f"Could not forward audio to Target PC {ip}:{port}: {e}")
-
-def get_engine():
+def get_engine() -> VoiceEngine:
+    """Lazily initializes and returns the singleton VoiceEngine."""
     global engine
     if engine is None:
         logger.info("Initializing Voice Engine...")
         engine = VoiceEngine()
     return engine
 
-def get_local_ip():
-    """Detects local LAN IP to connect from mobile phone."""
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.settimeout(0.5)
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-        s.close()
-        return ip
-    except Exception:
-        return "127.0.0.1"
+
+# ==========================================
+# 1. Application Lifespan & Initialization
+# ==========================================
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    eng = get_engine()
+    """Initializes models on startup and prints network connectivity banner."""
+    get_engine()
     local_ip = get_local_ip()
-    port = 8000
+    port = DEFAULT_SERVER_PORT
+
     print("\n" + "=" * 65)
-    print(" 🎙️  RVC & FAST-DSP VOICE CHANGER READY (HTTPS)!")
+    print(" 🎙️  VOICEMORPH DUAL-ENGINE SERVER READY (HTTPS)!")
     print(f" 💻  PC Web Interface:   https://localhost:{port}")
     print(f" 📱  Mobile Web App:     https://{local_ip}:{port}")
     print(" 🔒  Secure Context Active: Mobile microphone fully unlocked!")
-    print("     (Tap 'Advanced' -> 'Proceed to 192.168.1.2')")
+    print("     (Tap 'Advanced' -> 'Proceed to 192.168.1.X')")
     print("=" * 65 + "\n")
     yield
 
-app = FastAPI(title="RVC Mobile Voice Changer Server", lifespan=lifespan)
 
-# Allow CORS for mobile browsers
+app = FastAPI(title="VoiceMorph Mobile Voice Changer Server", lifespan=lifespan)
+
+# Allow CORS for mobile web apps on local Wi-Fi
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -105,8 +84,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 @app.middleware("http")
 async def add_no_cache_header(request, call_next):
+    """Disables aggressive browser caching on source assets so updates load instantly."""
     response = await call_next(request)
     if request.url.path.endswith((".js", ".html", ".css")) or request.url.path == "/":
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
@@ -114,22 +95,34 @@ async def add_no_cache_header(request, call_next):
         response.headers["Expires"] = "0"
     return response
 
+
+# ==========================================
+# 2. REST API Endpoints
+# ==========================================
+
 @app.post("/api/client_debug_log")
 async def client_debug_log(payload: dict):
+    """Receives remote browser console logs from mobile devices for diagnostics."""
     logger.info(f"📱 [CLIENT LOG]: {json.dumps(payload)}")
     return {"status": "ok"}
 
+
 @app.get("/api/target_pc/verify")
 async def api_verify_target(ip: str = "127.0.0.1", port: int = 8001):
+    """HTTP REST fallback to verify Target PC Virtual Mic receiver health."""
     ok, info = await asyncio.to_thread(check_target_pc, ip, port)
     return {"success": ok, "details": info, "ip": ip, "port": port}
 
+
 @app.get("/api/routing")
 async def get_routing():
+    """Returns current audio destination routing configuration."""
     return routing_config
+
 
 @app.post("/api/routing")
 async def set_routing(data: dict):
+    """Updates audio destination configuration (Target PC vs Mobile Speaker)."""
     if "target_pc_ip" in data:
         routing_config["target_pc_ip"] = str(data["target_pc_ip"])
     if "target_pc_port" in data:
@@ -140,8 +133,10 @@ async def set_routing(data: dict):
         routing_config["mobile_speaker_enabled"] = bool(data["mobile_speaker_enabled"])
     return routing_config
 
+
 @app.get("/api/info")
 async def get_info():
+    """Returns system status, active voice model, and runtime audio settings."""
     eng = get_engine()
     return {
         "status": "ready" if eng else "loading",
@@ -154,12 +149,14 @@ async def get_info():
         "routing": routing_config
     }
 
+
 @app.post("/api/config")
 async def set_config(data: dict):
+    """Updates model parameters (pitch shift, voice weights, denoiser mode)."""
     eng = get_engine()
     if not eng:
         return JSONResponse({"error": "Engine not initialized"}, status_code=500)
-    
+
     model_name = data.get("model", eng.current_tag)
     pitch_lvl = data.get("pitch", eng.pitch_lvl)
     pitch_algo = data.get("algo", eng.pitch_algo)
@@ -168,7 +165,7 @@ async def set_config(data: dict):
         eng.volume_gain = float(data["volume"])
     if "denoise" in data:
         eng.set_denoise_mode(data["denoise"])
-    
+
     result = eng.load_voice(
         model_name=model_name,
         pitch_lvl=pitch_lvl,
@@ -179,13 +176,23 @@ async def set_config(data: dict):
     result["denoise_mode"] = eng.denoise_mode
     return result
 
+
+# ==========================================
+# 3. Main Voice Conversion WebSocket (/ws)
+# ==========================================
+
 @app.websocket("/ws")
 async def websocket_audio(websocket: WebSocket):
+    """
+    Main full-duplex audio conversion channel.
+    Receives raw 16kHz PCM audio, converts through VoiceEngine on CPU worker thread,
+    and forwards to Target PC virtual mic or mobile phone.
+    """
     await websocket.accept()
     logger.info("Mobile client connected via WebSocket!")
     eng = get_engine()
-    
-    # Send welcome config
+
+    # Welcome handshake payload
     await websocket.send_json({
         "type": "connected",
         "current_model": eng.current_tag,
@@ -199,38 +206,39 @@ async def websocket_audio(websocket: WebSocket):
         "calibrated_noise_db": eng.calibrated_noise_db,
         "routing": routing_config
     })
-    
-    # Non-blocking conversion queue
+
+    # Non-blocking audio processing queue
     conversion_queue = asyncio.Queue()
     is_active = True
-    
+
     async def worker():
+        """Dedicated coroutine worker preventing audio conversion from blocking WebSocket loop."""
         while is_active:
             try:
                 item = await conversion_queue.get()
                 if item is None:
                     break
                 audio_np = item
-                audio_dur = len(audio_np) / 16000.0
-                
+                audio_dur = len(audio_np) / float(INPUT_SAMPLE_RATE)
+
                 logger.info(f"🎙️ [Worker] Processing {audio_dur:.2f}s of speech on Ryzen CPU...")
                 await websocket.send_json({
                     "type": "progress",
                     "step": "converting",
                     "msg": f"AI is converting your voice ({audio_dur:.1f}s speech)..."
                 })
-                
+
                 converted_bytes, out_sr, proc_time = await asyncio.to_thread(
-                    eng.convert_audio_array, audio_np, 16000
+                    eng.convert_audio_array, audio_np, INPUT_SAMPLE_RATE
                 )
-                
+
                 target_enabled = routing_config.get("target_pc_enabled", False)
                 mobile_enabled = routing_config.get("mobile_speaker_enabled", True)
                 target_ip = routing_config.get("target_pc_ip", "127.0.0.1")
                 target_port = routing_config.get("target_pc_port", 8001)
 
                 if target_enabled:
-                    # Forward to Target PC receiver asynchronously so conversion worker isn't delayed
+                    # Dispatch to Target PC virtual microphone asynchronously
                     asyncio.create_task(forward_to_target_pc(converted_bytes, out_sr, target_ip, target_port))
 
                 logger.info(f"✨ [Worker] Done in {proc_time:.2f}s! TargetPC={target_enabled}, MobileSpeaker={mobile_enabled}")
@@ -260,24 +268,24 @@ async def websocket_audio(websocket: WebSocket):
                     pass
 
     worker_task = asyncio.create_task(worker())
-    
+
     try:
         while True:
             message = await websocket.receive()
             if message.get("type") == "websocket.disconnect":
                 logger.info("Mobile client disconnected normally.")
                 break
-            
+
             # 1. Text / JSON messages (control events)
             if "text" in message:
                 try:
                     payload = json.loads(message["text"])
                     action = payload.get("action")
-                    
+
                     if action == "client_log":
                         logger.info(f"📱 [Mobile]: {payload.get('msg')}")
                         continue
-                    
+
                     if action == "set_engine_mode":
                         new_mode = payload.get("mode", "dsp")
                         eng.engine_mode = new_mode
@@ -332,9 +340,9 @@ async def websocket_audio(websocket: WebSocket):
                         continue
 
                     if action == "ping":
-                        # Instant pong response in < 0.1ms (keeps connection alive!)
+                        # Fast pong reply (< 0.1ms) keeps connection hot
                         await websocket.send_json({"type": "pong", "time": payload.get("time")})
-                        
+
                     elif action == "verify_target_pc":
                         target_ip = payload.get("ip", routing_config["target_pc_ip"])
                         target_port = int(payload.get("port", routing_config["target_pc_port"]))
@@ -364,19 +372,19 @@ async def websocket_audio(websocket: WebSocket):
                         })
                 except Exception as e:
                     logger.error(f"Error handling control message: {e}")
-                    
-            # 2. Binary messages (raw PCM 16-bit 16kHz audio from phone)
+
+            # 2. Binary messages (raw 16kHz PCM audio from mobile microphone)
             elif "bytes" in message:
                 raw_bytes = message["bytes"]
-                audio_dur = len(raw_bytes) / (2 * 16000.0)
-                
-                if len(raw_bytes) < 320:
-                    logger.warning("Audio chunk too short (<10ms), skipping.")
+                audio_dur = len(raw_bytes) / (2 * float(INPUT_SAMPLE_RATE))
+
+                if len(raw_bytes) < MIN_AUDIO_BYTES:
+                    logger.warning(f"Audio chunk too short (<{MIN_AUDIO_BYTES} bytes), skipping.")
                     continue
-                    
+
                 audio_np = np.frombuffer(raw_bytes, dtype=np.int16)
                 try:
-                    sf.write("calibration_voice_sample.wav", audio_np, 16000)
+                    sf.write("calibration_voice_sample.wav", audio_np, INPUT_SAMPLE_RATE)
                 except Exception as err:
                     logger.warning(f"Failed to save calibration sample: {err}")
                 logger.info(f"📥 Received {len(raw_bytes)} bytes audio ({audio_dur:.2f}s). Queued for RVC CPU conversion...")
@@ -386,7 +394,7 @@ async def websocket_audio(websocket: WebSocket):
                     "msg": "Audio received by server. Starting AI synthesis..."
                 })
                 await conversion_queue.put(audio_np)
-                
+
     except WebSocketDisconnect:
         logger.info("Mobile client disconnected.")
     except Exception as e:
@@ -395,19 +403,27 @@ async def websocket_audio(websocket: WebSocket):
         is_active = False
         worker_task.cancel()
 
+
+# ==========================================
+# 4. Target PC Audio Downlink Proxy (/ws/pc_audio)
+# ==========================================
+
 @app.websocket("/ws/pc_audio")
 async def websocket_pc_audio_proxy(client_ws: WebSocket):
-    """Bridges live Target PC desktop/speaker audio (Discord/WhatsApp calls) to mobile phone."""
+    """
+    Bridges live Target PC desktop/speaker audio (Discord/WhatsApp calls) to mobile phone.
+    Acts as a lightweight transparent WebSocket proxy between phone and target_receiver.py.
+    """
     await client_ws.accept()
     target_ip = routing_config.get("target_pc_ip", "127.0.0.1")
     target_port = routing_config.get("target_pc_port", 8001)
     target_url = f"ws://{target_ip}:{target_port}/pc_audio"
-    
+
     logger.info(f"🎧 [PC Audio Proxy] Connecting to Target PC at {target_url}...")
     try:
         async with websockets.connect(target_url, ping_interval=10, ping_timeout=10) as target_ws:
             logger.info("🎧 [PC Audio Proxy] Bridge active! Streaming Target PC sound to phone...")
-            
+
             async def forward_to_client():
                 try:
                     async for chunk in target_ws:
@@ -417,7 +433,7 @@ async def websocket_pc_audio_proxy(client_ws: WebSocket):
                             await client_ws.send_bytes(chunk)
                 except Exception:
                     pass
-                    
+
             async def listen_client():
                 try:
                     while True:
@@ -435,18 +451,16 @@ async def websocket_pc_audio_proxy(client_ws: WebSocket):
     finally:
         logger.info("🎧 [PC Audio Proxy] Client disconnected.")
 
-# Serve client web app
+
+# ==========================================
+# 5. Static Files & Entry Point
+# ==========================================
+
 client_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "client")
 if os.path.exists(client_dir):
     app.mount("/", StaticFiles(directory=client_dir, html=True), name="client")
 
 if __name__ == "__main__":
     import uvicorn
-    cert_exists = os.path.exists("certs/cert.pem") and os.path.exists("certs/key.pem")
-    ssl_kwargs = {}
-    if cert_exists:
-        ssl_kwargs = {
-            "ssl_keyfile": "certs/key.pem",
-            "ssl_certfile": "certs/cert.pem"
-        }
-    uvicorn.run("server.main:app", host="0.0.0.0", port=8000, reload=False, **ssl_kwargs)
+    ssl_kwargs = get_ssl_kwargs()
+    uvicorn.run("server.main:app", host="0.0.0.0", port=DEFAULT_SERVER_PORT, reload=False, **ssl_kwargs)

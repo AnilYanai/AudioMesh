@@ -1,3 +1,20 @@
+"""
+VoiceMorph Target PC Audio Receiver Agent (Port 8001).
+
+Runs as a lightweight daemon on the machine running Discord, WhatsApp, Zoom, or games.
+Responsibilities:
+1. Virtual Microphone Creation:
+   - Linux: Uses PipeWire (pw-loopback) to create 'VoiceMorph_Sink' and 'VoiceMorph_Mic'.
+   - Converted female voice feeds into 'VoiceMorph_Sink' -> outputs through 'VoiceMorph_Mic'.
+   - Discord selects 'VoiceMorph Virtual Microphone' as its input device.
+2. Ingestion Endpoints:
+   - POST /audio: Ingests base64-encoded PCM audio chunks and plays them into the virtual mic.
+   - GET /status: Health check queried by the main voice server and mobile UI.
+3. Audio Downlink:
+   - WS /pc_audio: Captures desktop/call output at 48kHz Stereo via PipeWire sink monitor,
+     streaming audio back to the mobile phone earphones so users can hear call peers.
+"""
+
 import os
 import sys
 import time

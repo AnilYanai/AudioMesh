@@ -260,25 +260,46 @@ This enables the standard Chrome **"Advanced $\rightarrow$ Proceed to 192.168.1.
 
 ---
 
-## 5. Client-Side Web Audio Architecture
+## 5. Client-Side Modular Web Audio Architecture
 
-The client (`client/app.js`) is built with vanilla JavaScript using the **HTML5 Web Audio API**:
+The client has been refactored from a monolithic script into an **enterprise-grade, modular ES6 architecture** inside `client/js/`:
 
-1. **Microphone Capture**:
-   - `navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })`.
-   - Audio is captured through a continuous `ScriptProcessorNode` connected to an `AnalyserNode`.
-2. **Real-Time Linear Resampler**:
-   - Resamples native mobile sample rates (44.1kHz or 48kHz) down to **16kHz 16-bit linear PCM**, matching the model's exact input requirements and reducing network bandwidth.
-3. **Smart Interaction Handler**:
-   - **Hold-to-Talk**: User presses the glowing button $\rightarrow$ samples accumulate $\rightarrow$ release button $\rightarrow$ audio is encoded to `Int16Array` and sent over WebSocket.
-   - **Tap-to-Talk**: Tapping the button under 350ms toggles recording mode on until the next tap.
-   - `contextmenu` and `touchcancel` events are suppressed to prevent mobile browsers from triggering long-press context menus.
-4. **Target PC Routing & Verification Engine**:
-   - Manages WebSocket control packets (`verify_target_pc`, `update_routing`).
-   - Reflects live driver health status with real-time animated indicators.
-   - Mutes local mobile playback if mobile monitoring is disabled to prevent distraction.
-5. **Real-Time Canvas Visualizer**:
-   - An FFT-based frequency bar visualizer animates speech input and target voice playback.
+```
+📁 client/js/
+├── state.js           - Central reactive state, DOM cache, logging & telemetry (234 lines)
+├── audio-core.js      - Web Audio API graph, microphone lifecycle, RMS & noise gate (474 lines)
+├── voice-ws.js        - Conversion WebSocket /ws, heartbeat, feedback-free router (275 lines)
+├── ptt.js             - Walkie-Talkie Push-to-Talk gestures & PCM chunking (161 lines)
+├── live-stream.js     - Real-time continuous live streaming engine (80 lines)
+├── target-pc.js       - Virtual Mic driver verification & routing configuration (193 lines)
+├── pc-audio.js        - PC Desktop/Call audio downlink /ws/pc_audio & jitter buffer (264 lines)
+├── room-calibrator.js - 1.5-second ambient room noise calibration engine (112 lines)
+├── visualizer.js      - Audio frequency bar visualizer & idle wave animation (63 lines)
+├── ui-controls.js     - Sliders, vocal profile buttons, engine toggle & tab navigation (248 lines)
+└── main.js            - Application bootstrap and developer diagnostics handle (71 lines)
+```
+
+### Module Responsibilities:
+1. **Microphone Capture & Telephony Isolation (`audio-core.js`)**:
+   - Manages `AudioContext`, input gain, and hardware `75Hz` low-cut highpass.
+   - Dual-Profile switching:
+     - **📞 Call Mode**: Activates hardware Echo Cancellation (AEC) and routes to phone earpiece for private calls.
+     - **🎵 Music Mode**: Bypasses AEC completely, releases microphone lock, and switches physical phone buttons to full-fidelity Media Volume.
+2. **Decoupled Output Routing (`voice-ws.js`)**:
+   - In **Live Mode**: Converted voice streams strictly to the Target PC Virtual Mic (`VoiceMorph_Mic`). The phone earphone output is bypassed, **eliminating acoustic/electrical feedback loops 100%**.
+   - In **Walkie-Talkie Mode**: Half-duplex playback into phone earphones for timbre monitoring.
+3. **Target PC Audio Downlink (`pc-audio.js`)**:
+   - Connects to `/ws/pc_audio` for live PipeWire monitor capture.
+   - Implements a gapless **200ms Jitter Buffer** with drift protection.
+   - Features a studio Call Mode DSP chain ($85\text{Hz}$ low-cut, $+3.5\text{dB}$ presence lift at $2.8\text{kHz}$, dynamics compressor).
+4. **Interactive Gesture Engine (`ptt.js` & `live-stream.js`)**:
+   - Distinguishes Hold-to-Talk ($\ge 400\text{ms}$) from Tap-to-Talk ($< 400\text{ms}$).
+   - Handles real-time chunked streaming with adjustable interval ($1.0\text{s} - 2.5\text{s}$).
+5. **Acoustic Calibration (`room-calibrator.js`)**:
+   - 1.5s silent ambient noise sampling.
+   - Computes median RMS to reject click artifacts and switches between **Fan ON Mode** (forward boost) and **Quiet Room Mode** (transparent).
+6. **Console Diagnostics (`window.VoiceMorph`)**:
+   - Exposes internal reactive state, nodes, and test routines in browser DevTools.
 
 ---
 
@@ -286,14 +307,27 @@ The client (`client/app.js`) is built with vanilla JavaScript using the **HTML5 
 
 ```text
 /home/mathavan/Documents/voice changer/
+├── backup_v17_baseline/             # Full immutable backup of pre-modular baseline (v17)
 ├── certs/
 │   ├── cert.pem                     # SSL Certificate with SAN IP extensions
 │   └── key.pem                      # SSL Private Key
 ├── client/
 │   ├── index.html                   # Mobile-first Web UI (PTT, Live Stream, PC Virtual Mic)
-│   ├── app.js                       # Audio capture, target verification & routing logic
 │   ├── styles.css                   # Cyber-glow dark UI with glassmorphism & visualizer
-│   └── manifest.json                # PWA manifest for home-screen installation
+│   ├── manifest.json                # PWA manifest for home-screen installation
+│   ├── app.js                       # Modular loader & architecture guide
+│   └── js/                          # 📦 Modular Single-Responsibility ES6 Modules
+│       ├── state.js                 # Central state & DOM element caching
+│       ├── audio-core.js            # Web Audio API graph & mic lifecycle
+│       ├── voice-ws.js              # Server WebSocket & feedback-free router
+│       ├── ptt.js                   # Walkie-Talkie Push-to-Talk interactions
+│       ├── live-stream.js           # Live continuous conversion engine
+│       ├── target-pc.js             # PC driver verification & routing config
+│       ├── pc-audio.js              # PC sound downlink & 200ms jitter buffer
+│       ├── room-calibrator.js       # Ambient noise calibration routine
+│       ├── visualizer.js            # Canvas spectrum analyzer
+│       ├── ui-controls.js           # Sliders, presets & mode listeners
+│       └── main.js                  # Application bootstrap & window.VoiceMorph
 ├── receiver/
 │   ├── target_receiver.py           # Cross-platform Virtual Mic daemon (port 8001)
 │   ├── run_receiver_linux.sh        # PipeWire/Pulse virtual microphone launcher
@@ -304,10 +338,13 @@ The client (`client/app.js`) is built with vanilla JavaScript using the **HTML5 
 │           ├── BlazBlue_Noel_Vermillion_English.pth     # Female voice weights
 │           └── ..._v2.index                             # Feature index
 ├── server/
-│   ├── main.py                      # FastAPI + WebSocket server with LAN routing
-│   └── voice_engine.py              # Dual-Engine: PyWorld DSP + RVC CPU Inference
+│   ├── config.py                    # Network discovery, constants & routing state
+│   ├── target_client.py             # Target PC HTTP forwarder & health checker
+│   ├── voice_engine.py              # Dual-Engine: PyWorld DSP + RVC CPU Inference
+│   └── main.py                      # FastAPI + WebSocket server router & worker task
 ├── start_all.sh                     # Full-stack launcher (Server + Target PC Receiver)
 ├── start_server.sh                  # Dedicated Voice Changer server launcher
+└── DOCUMENTATION.md                 # Master Architecture Documentation
 └── DOCUMENTATION.md                 # Complete system documentation
 ```
 
