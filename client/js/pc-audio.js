@@ -8,6 +8,7 @@
 
 import { state, elements, logEvent } from './state.js';
 import { getAudioContext } from './audio-core.js';
+import { startBackgroundKeepAlive, stopBackgroundKeepAlive } from './background-keepalive.js';
 
 // ==========================================
 // 1. Web Audio DSP Graph (Call Mode vs Pure Stereo)
@@ -132,6 +133,7 @@ export async function startPcAudioListening() {
       state.pcAudio.isFirstChunk = true;
       state.pcAudio.nextPlayTime = 0;
       updatePcAudioUI(true);
+      startBackgroundKeepAlive();
       logEvent("🎧 Connected! Target PC audio is streaming in high-definition.", "success");
     };
 
@@ -175,6 +177,9 @@ export function stopPcAudioListening() {
     state.pcAudio.ws = null;
   }
   updatePcAudioUI(false);
+  if (!state.isLiveStreaming) {
+    stopBackgroundKeepAlive();
+  }
   logEvent("Stopped listening to Target PC audio.");
 }
 

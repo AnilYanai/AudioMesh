@@ -7,6 +7,7 @@
  */
 
 import { state, elements, logEvent } from './state.js';
+import { dispatchLiveAudioChunk } from './live-stream.js';
 
 // ==========================================
 // 1. AudioContext Lifecycle & Permission
@@ -301,6 +302,10 @@ export async function enableMicrophone(isAuto = false, forceReacquire = false) {
         state.pttAudioBuffer.push(...resampled);
       } else if (state.isLiveStreaming) {
         state.liveAudioBuffer.push(...resampled);
+        const targetSamples = Math.round((state.liveChunkInterval || 1.5) * 16000);
+        if (state.liveAudioBuffer.length >= targetSamples) {
+          dispatchLiveAudioChunk();
+        }
       }
     };
 

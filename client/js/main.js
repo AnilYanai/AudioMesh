@@ -16,6 +16,7 @@ import { initPcAudioListeners, togglePcAudioListening, relinkPcAudioGraph } from
 import { initRoomCalibratorListeners, startRoomCalibration } from './room-calibrator.js';
 import { initVisualizer } from './visualizer.js';
 import { initUiListeners, setEngineMode, setVocalProfile } from './ui-controls.js';
+import { initBackgroundKeepAlive, startBackgroundKeepAlive, stopBackgroundKeepAlive } from './background-keepalive.js';
 
 /**
  * Global developer diagnostics handle available in browser console.
@@ -47,7 +48,12 @@ function initApp() {
   // 1. Initialize Visualizer Canvas & Resize Observer
   initVisualizer();
 
-  // 2. Initialize UI Interaction Handlers
+  // 2. Initialize Lock-Screen Background Audio Keep-Alive
+  initBackgroundKeepAlive();
+  document.addEventListener("touchstart", () => initBackgroundKeepAlive(), { once: true, passive: true });
+  document.addEventListener("click", () => initBackgroundKeepAlive(), { once: true, passive: true });
+
+  // 3. Initialize UI Interaction Handlers
   initUiListeners();
   initPttListeners();
   initLiveStreamListeners();
