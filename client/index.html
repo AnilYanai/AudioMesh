@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>RVC Mobile Voice Changer</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#121214">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="stylesheet" href="styles.css?v=20261023_declick_final_v6">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="header">
+      <div class="logo-group">
+        <span class="icon">✨</span>
+        <div>
+          <h1>VoiceMorph</h1>
+          <p class="subtitle">RVC AI Voice Changer</p>
+        </div>
+      </div>
+      <div id="connectionStatus" class="status-badge disconnected">
+        <span class="status-dot"></span>
+        <span id="statusText">Connecting...</span>
+      </div>
+    </header>
+
+    <!-- Global Audio Mode: 📞 Call Mode (Earpiece/AEC) vs 🎵 Music Mode (Media/Hi-Fi) -->
+    <div class="global-mode-card">
+      <div class="global-mode-header">
+        <div class="global-mode-title-group">
+          <span class="global-mode-icon">🎛️</span>
+          <div>
+            <h3>System Audio Profile</h3>
+            <p class="global-mode-sub">Applied across Walkie-Talkie, Live Stream & PC Audio</p>
+          </div>
+        </div>
+        <span id="globalModeBadge" class="global-mode-pill call">📞 Call Mode (AEC & Earpiece)</span>
+      </div>
+
+      <div class="global-mode-tabs">
+        <button id="btnGlobalCallMode" class="global-mode-tab active call-tab" type="button">
+          <span class="tab-emoji">📞</span>
+          <div class="tab-content">
+            <span class="tab-title">Call Mode</span>
+            <span class="tab-desc">Hardware AEC • Ear Speaker / Walkie-Talkie • Call Vol</span>
+          </div>
+        </button>
+        <button id="btnGlobalMusicMode" class="global-mode-tab music-tab" type="button">
+          <span class="tab-emoji">🎵</span>
+          <div class="tab-content">
+            <span class="tab-title">Music Mode</span>
+            <span class="tab-desc">48kHz Pure Stereo • Main Speaker • Media Vol</span>
+          </div>
+        </button>
+      </div>
+    </div>
+
+    <!-- One-Time Microphone Activation Banner -->
+    <div id="micPromptBanner" class="mic-banner">
+      <div class="mic-banner-info">
+        <span class="mic-banner-icon">🎙️</span>
+        <div>
+          <div class="mic-banner-title" id="micBannerTitle">Microphone Not Activated</div>
+          <div class="mic-banner-sub" id="micBannerSub">Tap here once to enable microphone</div>
+        </div>
+      </div>
+      <button id="enableMicBtn" class="mic-enable-btn" type="button">Activate Mic</button>
+    </div>
+
+    <!-- Visualizer Canvas -->
+    <div class="visualizer-card">
+      <canvas id="visualizerCanvas"></canvas>
+      <div class="audio-state-tag" id="audioStateTag">Microphone Inactive</div>
+    </div>
+
+    <!-- Real-Time Acoustic Noise & Speech Monitor -->
+    <div class="acoustic-card">
+      <div class="acoustic-item">
+        <span class="acoustic-label">🌀 Room Noise Floor</span>
+        <span id="statNoiseFloor" class="acoustic-val">Measuring...</span>
+      </div>
+      <div class="acoustic-item">
+        <span class="acoustic-label">🎙️ Live Voice Level</span>
+        <span id="statVoiceLevel" class="acoustic-val">Listening...</span>
+      </div>
+      <div class="acoustic-item">
+        <span class="acoustic-label">⚡ Vocal Clarity</span>
+        <span id="statSnrQuality" class="acoustic-val snr-badge-good">Calibrating</span>
+      </div>
+    </div>
+
+    <!-- Engine Speed Selector -->
+    <div class="engine-toggle-card">
+      <div class="engine-options">
+        <button id="engineDspBtn" class="engine-btn active" type="button">
+          <span class="engine-badge fast">0.2s</span>
+          <span>⚡ Instant Fast Mode</span>
+        </button>
+        <button id="engineRvcBtn" class="engine-btn" type="button">
+          <span class="engine-badge ai">AI</span>
+          <span>🧠 RVC Neural</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Dedicated Vocal Profile (Standard vs Creator Profile) -->
+    <div class="profile-toggle-card">
+      <div class="profile-header">
+        <span class="profile-title">👤 Voice Profile</span>
+        <span id="profileStatusBadge" class="profile-badge standard">Standard</span>
+      </div>
+      <div class="profile-options">
+        <button id="profileStandardBtn" class="profile-btn active" type="button">
+          <span class="profile-btn-icon">🌐</span>
+          <div class="profile-btn-content">
+            <span class="profile-btn-title">Standard Voice</span>
+            <span class="profile-btn-sub">Universal / General</span>
+          </div>
+        </button>
+        <button id="profileCreatorBtn" class="profile-btn" type="button">
+          <span class="profile-btn-icon">✨</span>
+          <div class="profile-btn-content">
+            <span class="profile-btn-title">Creator Profile</span>
+            <span class="profile-btn-sub">Soft Voice • De-Hiss • De-Breath</span>
+          </div>
+        </button>
+      </div>
+    </div>
+
+    <!-- 🎯 Room Noise Calibration Card (1-Tap Silent Sample) -->
+    <div class="calibration-card">
+      <div class="cal-header">
+        <div class="cal-title-group">
+          <span class="cal-icon">🎯</span>
+          <span class="cal-title">Room Noise Calibration</span>
+        </div>
+        <span id="calStatusBadge" class="cal-badge auto">Auto-Sensing</span>
+      </div>
+      <p class="cal-desc">Stay silent for 1.5s so the engine measures your room/fan and tunes the voice.</p>
+      <button id="calibrateRoomBtn" class="calibrate-action-btn" type="button">
+        <span id="calBtnIcon">🎙️</span>
+        <span id="calBtnText">Tap to Calibrate (Stay Silent 1.5s)</span>
+      </button>
+      <div id="calProgressWrap" class="cal-progress-wrap" style="display: none;">
+        <div class="cal-progress-track">
+          <div class="cal-progress-fill" id="calProgressBar"></div>
+        </div>
+        <span class="cal-countdown-text" id="calCountdownText">Listening to room... stay silent (1.5s)</span>
+      </div>
+    </div>
+
+    <!-- Main Controls Mode -->
+    <div class="mode-selector">
+      <button id="modePtt" class="mode-btn active" type="button">
+        <span>📻</span> Walkie-Talkie
+      </button>
+      <button id="modeLive" class="mode-btn" type="button">
+        <span>🔴</span> Live Stream
+      </button>
+      <button id="modeTarget" class="mode-btn" type="button">
+        <span>🖥️</span> PC Virtual Mic
+      </button>
+    </div>
+
+    <!-- Active Routing Quick Bar -->
+    <div id="routingStatusPill" class="routing-status-pill">
+      <span class="routing-pill-title">Routing:</span>
+      <span id="pillTargetStatus" class="pill-badge active">🖥️ PC Mic: ON</span>
+      <span id="pillMobileStatus" class="pill-badge active">📱 Voice: ON</span>
+      <span id="pillHearPcStatus" class="pill-badge disabled">🎧 Hear PC: OFF</span>
+    </div>
+
+    <!-- Push To Talk Interaction Section -->
+    <div id="pttSection" class="ptt-container">
+      <button id="pttButton" class="ptt-btn" type="button">
+        <div class="ptt-glow"></div>
+        <div class="ptt-inner">
+          <svg class="mic-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+            <line x1="12" x2="12" y1="19" y2="22"/>
+          </svg>
+          <span id="pttLabel">Hold or Tap to Talk</span>
+        </div>
+      </button>
+      <p class="hint-text">Speak naturally, then release to transform your voice</p>
+    </div>
+
+    <!-- Live Stream Interaction Section -->
+    <div id="liveSection" class="live-container hidden">
+      <button id="liveToggleBtn" class="stream-btn start">
+        <span class="stream-icon">▶</span>
+        <span id="liveBtnText">Start Live Conversion</span>
+      </button>
+      <div class="chunk-control">
+        <label>Chunk Interval:</label>
+        <select id="chunkIntervalSelect">
+          <option value="1.0">1.0s (Fast)</option>
+          <option value="1.5" selected>1.5s (Balanced)</option>
+          <option value="2.0">2.0s (High Stability)</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Target PC Virtual Mic Setup Section -->
+    <div id="targetSection" class="target-container hidden">
+      <div class="target-card">
+        <div class="target-card-header">
+          <div class="target-title-group">
+            <span class="target-icon">🖥️</span>
+            <div>
+              <h3>Target PC Virtual Mic</h3>
+              <p class="target-desc">Feed Discord / WhatsApp / Games on any PC</p>
+            </div>
+          </div>
+          <div id="targetVerifyBadge" class="verify-badge unverified">
+            <span class="verify-dot"></span>
+            <span id="targetVerifyText">Unverified</span>
+          </div>
+        </div>
+
+        <!-- IP and Port Inputs -->
+        <div class="target-input-grid">
+          <div class="input-field-group">
+            <label for="targetIpInput">Target PC IP Address</label>
+            <div class="input-with-button">
+              <input type="text" id="targetIpInput" class="styled-input" placeholder="e.g. 127.0.0.1 or 192.168.1.X" value="127.0.0.1">
+              <button id="btnQuickLocalhost" class="chip-btn" type="button" title="Set to Localhost (This Laptop)">This PC</button>
+            </div>
+          </div>
+          <div class="input-field-group small">
+            <label for="targetPortInput">Port</label>
+            <input type="number" id="targetPortInput" class="styled-input" placeholder="8001" value="8001">
+          </div>
+        </div>
+
+        <!-- Verify Connection Button -->
+        <button id="btnVerifyTarget" class="action-btn verify-btn" type="button">
+          <span class="btn-spinner hidden" id="verifySpinner"></span>
+          <span id="verifyBtnIcon">🔍</span>
+          <span id="verifyBtnText">Verify Driver &amp; Connection</span>
+        </button>
+
+        <!-- Driver / Connection Status Details Box -->
+        <div id="targetDetailsCard" class="target-details-card">
+          <div class="details-row">
+            <span class="details-label">Driver Status:</span>
+            <span id="detailsDriverStatus" class="details-val text-muted">Ready to test</span>
+          </div>
+          <div class="details-row">
+            <span class="details-label">Target OS:</span>
+            <span id="detailsPlatform" class="details-val text-muted">--</span>
+          </div>
+          <div class="details-row">
+            <span class="details-label">Virtual Mic Device:</span>
+            <span id="detailsVirtualMic" class="details-val text-muted">VoiceMorph Virtual Microphone</span>
+          </div>
+        </div>
+
+        <!-- Audio Output Routing Destination Toggles -->
+        <div class="routing-options-card">
+          <h4>🔊 Audio Output Routing</h4>
+          <div class="toggle-row">
+            <div class="toggle-info">
+              <span class="toggle-title">🖥️ Stream to Target PC Mic</span>
+              <span class="toggle-sub">Feed converted voice to Discord / WhatsApp / Games</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="toggleTargetPc" checked>
+              <span class="slider round"></span>
+            </label>
+          </div>
+
+          <div class="toggle-row">
+            <div class="toggle-info">
+              <span class="toggle-title">📱 Hear Voice on Phone</span>
+              <span class="toggle-sub">Play converted female voice through phone speaker</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="toggleMobileSpeaker" checked>
+              <span class="slider round"></span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Two-Way Wireless Audio Streaming (Listen to PC Audio / Calls) -->
+        <div class="pc-audio-card">
+          <div class="pc-audio-header">
+            <div class="pc-audio-title-group">
+              <span class="pc-audio-icon">🎧</span>
+              <div>
+                <h4>Hear PC Audio on Phone</h4>
+                <p class="pc-audio-sub">Stream Discord, Spotify, or YouTube to your phone</p>
+              </div>
+            </div>
+            <div class="pc-audio-badges">
+              <span id="pcAudioFmtBadge" class="format-badge">48kHz Stereo</span>
+              <div id="pcAudioBadge" class="verify-badge unverified">
+                <span class="verify-dot"></span>
+                <span id="pcAudioBadgeText">Muted</span>
+              </div>
+            </div>
+          </div>
+
+          <button id="btnTogglePcAudio" class="action-btn listen-btn" type="button">
+            <span id="btnPcAudioIcon">▶</span>
+            <span id="btnPcAudioText">Start Listening to PC Audio</span>
+          </button>
+
+          <div class="pc-volume-control">
+            <div class="label-with-value">
+              <label for="pcAudioVolume">Earphone Volume</label>
+              <span id="pcAudioVolumeVal" class="value-badge">100%</span>
+            </div>
+            <input type="range" id="pcAudioVolume" min="0" max="150" value="100" step="5" class="styled-slider">
+          </div>
+        </div>
+
+        <!-- Step-by-step Setup Helper -->
+        <div class="setup-guide-card">
+          <h4>💡 Setup for Discord / WhatsApp / Meet:</h4>
+          <ol class="setup-steps">
+            <li>On the Target PC, run:
+              <code class="code-snippet">./receiver/run_receiver_linux.sh</code> (Linux) or <br>
+              <code class="code-snippet">receiver\run_receiver_windows.bat</code> (Windows)
+            </li>
+            <li>In Discord or WhatsApp Audio Settings, set <strong>Input Device (Microphone)</strong> to:
+              <strong class="highlight-text">"VoiceMorph Virtual Microphone"</strong>
+            </li>
+            <li>Tap "Verify Driver" above. When green, speak into this phone and your converted voice will flow live into Discord!</li>
+          </ol>
+        </div>
+      </div>
+    </div>
+
+    <!-- Voice Settings Card -->
+    <div class="settings-card">
+      <h3>Voice Settings</h3>
+      
+      <!-- Voice Model Dropdown -->
+      <div class="control-row">
+        <label for="modelSelect">Target Voice</label>
+        <select id="modelSelect" class="styled-select">
+          <option value="" disabled selected>Loading models...</option>
+        </select>
+      </div>
+
+      <!-- Pitch Shift Slider -->
+      <div class="control-row">
+        <div class="label-with-value">
+          <label for="pitchSlider">Pitch Shift</label>
+          <span id="pitchValue" class="value-badge">+12 (Female)</span>
+        </div>
+        <input type="range" id="pitchSlider" min="-12" max="24" value="12" step="1" class="styled-slider">
+        <div class="slider-scale">
+          <span>-12</span>
+          <span>0 (Natural)</span>
+          <span class="highlight">+12 (Female)</span>
+          <span>+24</span>
+        </div>
+      </div>
+
+      <!-- Voice Loudness Boost Slider -->
+      <div class="control-row">
+        <div class="label-with-value">
+          <label for="voiceGainSlider">Voice Volume Boost</label>
+          <span id="voiceGainValue" class="value-badge">+160% (Punchy)</span>
+        </div>
+        <input type="range" id="voiceGainSlider" min="50" max="250" value="160" step="5" class="styled-slider">
+        <div class="slider-scale">
+          <span>50%</span>
+          <span>100% (Normal)</span>
+          <span class="highlight">160% (Loud)</span>
+          <span>250% (Max)</span>
+        </div>
+      </div>
+
+      <!-- Pitch Algorithm -->
+      <div class="control-row">
+        <label for="algoSelect">Pitch Algorithm</label>
+        <select id="algoSelect" class="styled-select">
+          <option value="pm" selected>PM (Fastest CPU)</option>
+          <option value="harvest">Harvest (High Pitch Detail)</option>
+        </select>
+      </div>
+
+      <!-- Background Noise Filter -->
+      <div class="control-row">
+        <div class="label-with-value">
+          <label for="denoiseSelect">Background Noise Filter</label>
+          <span id="denoiseBadge" class="value-badge highlight">Clean Voice (Best Quality)</span>
+        </div>
+        <select id="denoiseSelect" class="styled-select">
+          <option value="normal" selected>✨ Clean Voice (Best Quality - Transparent)</option>
+          <option value="high">🛡️ Strong (High Fan / Room Noise)</option>
+          <option value="low">🍃 Gentle Filter (Subtle)</option>
+          <option value="off">🎙️ Raw Mic (Off - 100% Studio Sound)</option>
+        </select>
+      </div>
+
+      <!-- Silence Noise Gate -->
+      <div class="control-row">
+        <div class="label-with-value">
+          <label for="noiseGateSlider">Silence Noise Gate</label>
+          <span id="noiseGateVal" class="value-badge">Auto-Smart (Fan Adaptive)</span>
+        </div>
+        <input type="range" id="noiseGateSlider" min="0" max="100" value="50" step="5" class="styled-slider">
+        <div class="slider-scale">
+          <span>Off (0%)</span>
+          <span class="highlight">Auto-Smart (50%)</span>
+          <span>Moderate (75%)</span>
+          <span>Strict (100%)</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Performance & Status Card -->
+    <div class="telemetry-card">
+      <div class="telemetry-item">
+        <span class="telem-label">Roundtrip Latency</span>
+        <span id="statLatency" class="telem-value">-- ms</span>
+      </div>
+      <div class="telemetry-item">
+        <span class="telem-label">Server Compute</span>
+        <span id="statCompute" class="telem-value">-- s</span>
+      </div>
+      <div class="telemetry-item">
+        <span class="telem-label">Sample Rate</span>
+        <span id="statSr" class="telem-value">40,000 Hz</span>
+      </div>
+    </div>
+
+    <!-- Live Activity Console -->
+    <div class="activity-card">
+      <div class="activity-header">
+        <span>📋 Live Status Log</span>
+        <span id="clearLogBtn" style="font-size:10px; cursor:pointer; color:var(--text-muted)">Clear</span>
+      </div>
+      <div id="activityLog" class="activity-log-body">
+        <div class="log-line">Ready. Waiting for user interaction...</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    window.onerror = function(msg, url, line, col, error) {
+      var logElem = document.getElementById("activityLog");
+      var text = "⚠️ [JS Error]: " + msg + " (line " + line + ")";
+      console.error(text, error);
+      if (logElem) {
+        var d = document.createElement("div");
+        d.style.color = "#f43f5e";
+        d.style.fontWeight = "bold";
+        d.textContent = text;
+        logElem.prepend(d);
+      }
+      var statusElem = document.getElementById("statusText");
+      if (statusElem && statusElem.textContent === "Connecting...") {
+        statusElem.textContent = "Error: Line " + line;
+      }
+    };
+  </script>
+  <script src="app.js?v=20261025_walkie_talkie_monitor_v17"></script>
+</body>
+</html>

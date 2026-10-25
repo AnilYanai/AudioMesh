@@ -1,0 +1,8 @@
+venv/
+models/
+certs/
+*.wav
+__pycache__/
+*.pyc
+.DS_Store
+backup_v17_baseline/
