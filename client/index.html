@@ -320,6 +320,18 @@
             </div>
             <input type="range" id="pcAudioVolume" min="0" max="150" value="100" step="5" class="styled-slider">
           </div>
+
+          <div class="pc-latency-control" style="margin-top: 14px;">
+            <div class="label-with-value">
+              <label for="pcAudioLatencyMode">Video/Audio Sync (Latency)</label>
+              <span id="pcAudioLatencyVal" class="value-badge">⚡ Video Sync (45ms)</span>
+            </div>
+            <select id="pcAudioLatencyMode" class="styled-select" style="width: 100%; margin-top: 6px;">
+              <option value="ultra" selected>⚡ Ultra-Sync (45ms) - Video & Gaming Lip-Sync</option>
+              <option value="balanced">⚖️ Balanced (75ms) - Smooth Real-Time</option>
+              <option value="stable">🎵 Stable Buffer (140ms) - High Wi-Fi Jitter</option>
+            </select>
+          </div>
         </div>
 
         <!-- Step-by-step Setup Helper -->
@@ -466,6 +478,6 @@
       }
     };
   </script>
-  <script type="module" src="js/main.js?v=20261025_ultralow_latency_v20"></script>
+  <script type="module" src="js/main.js?v=20261025_declick_sync_v21"></script>
 </body>
 </html>

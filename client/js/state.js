@@ -156,6 +156,8 @@ export const elements = {
   pcAudioVolume: document.getElementById("pcAudioVolume"),
   pcAudioVolumeVal: document.getElementById("pcAudioVolumeVal"),
   pcAudioFmtBadge: document.getElementById("pcAudioFmtBadge"),
+  pcAudioLatencyMode: document.getElementById("pcAudioLatencyMode"),
+  pcAudioLatencyVal: document.getElementById("pcAudioLatencyVal"),
 
   // Voice Settings & Controls
   modelSelect: document.getElementById("modelSelect"),

@@ -219,29 +219,33 @@ export function playPcAudioChunk(arrayBuffer) {
   }
 
   const now = ctx.currentTime;
+  const duration = audioBuf.duration;
 
-  // Ultra-Low-Latency Jitter Buffer (Video Lip-Sync Optimized)
+  // Collision-Free Mathematical Gapless Scheduling:
+  // 1. Initial connection startup cushion
   if (state.pcAudio.isFirstChunk) {
-    state.pcAudio.nextPlayTime = now + state.pcAudio.jitterCushionSec; // 50ms initial cushion on startup
-    state.pcAudio.isFirstChunk = false;
-  } else if (now > state.pcAudio.nextPlayTime + 0.060) {
-    // Late packet arrival -> gently re-cushion at tight 50ms
     state.pcAudio.nextPlayTime = now + state.pcAudio.jitterCushionSec;
-  } else if (state.pcAudio.nextPlayTime > now + 0.090) {
-    // Tight clock-drift cap: if buffer accumulated >90ms, instantly snap back to real-time sync!
+    state.pcAudio.isFirstChunk = false;
+  }
+  // 2. Buffer Underrun / Starvation (network packet arrived late after audio finished)
+  else if (now > state.pcAudio.nextPlayTime) {
+    state.pcAudio.nextPlayTime = now + state.pcAudio.jitterCushionSec;
+  }
+  // 3. Excess Drift Cap: only if audio buffer drifted > 200ms behind real-time
+  else if (state.pcAudio.nextPlayTime > now + 0.200) {
     state.pcAudio.nextPlayTime = now + state.pcAudio.jitterCushionSec;
   }
 
-  // Gapless, seamless playback:
-  // If packet arrived slightly late (<150ms), play immediately at 'now' without schedule destruction
-  const startAt = Math.max(now, state.pcAudio.nextPlayTime);
+  // 4. Guaranteed Non-Overlapping Start Time (strictly contiguous, ZERO clicks)
+  const startAt = state.pcAudio.nextPlayTime;
 
   const source = ctx.createBufferSource();
   source.buffer = audioBuf;
   source.connect(state.pcAudio.inputNode);
 
   source.start(startAt);
-  state.pcAudio.nextPlayTime = startAt + audioBuf.duration;
+  // Next chunk plays strictly when this one ends: ZERO gaps, ZERO overlapping collisions
+  state.pcAudio.nextPlayTime = startAt + duration;
 }
 
 // ==========================================
@@ -259,6 +263,26 @@ export function initPcAudioListeners() {
       state.pcAudio.volume = val / 100.0;
       if (elements.pcAudioVolumeVal) elements.pcAudioVolumeVal.textContent = `${val}%`;
       if (state.pcAudio.gainNode) state.pcAudio.gainNode.gain.value = state.pcAudio.volume;
+    });
+  }
+
+  if (elements.pcAudioLatencyMode) {
+    elements.pcAudioLatencyMode.addEventListener("change", (e) => {
+      const mode = e.target.value;
+      if (mode === "ultra") {
+        state.pcAudio.jitterCushionSec = 0.045;
+        if (elements.pcAudioLatencyVal) elements.pcAudioLatencyVal.textContent = "⚡ Video Sync (45ms)";
+        logEvent("⚡ PC Audio Latency set to Ultra-Sync (45ms) for video lip-sync.", "highlight");
+      } else if (mode === "balanced") {
+        state.pcAudio.jitterCushionSec = 0.075;
+        if (elements.pcAudioLatencyVal) elements.pcAudioLatencyVal.textContent = "⚖️ Balanced (75ms)";
+        logEvent("⚖️ PC Audio Latency set to Balanced (75ms).", "highlight");
+      } else {
+        state.pcAudio.jitterCushionSec = 0.140;
+        if (elements.pcAudioLatencyVal) elements.pcAudioLatencyVal.textContent = "🎵 Stable (140ms)";
+        logEvent("🎵 PC Audio Latency set to Stable Buffer (140ms).", "highlight");
+      }
+      state.pcAudio.isFirstChunk = true;
     });
   }
 }
