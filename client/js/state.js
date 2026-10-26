@@ -81,6 +81,14 @@ export const state = {
     compressorNode: null,
     limiterNode: null,
     inputNode: null
+  },
+
+  // Target PC Media Playback State (for Play/Pause, Next, Prev, Headphone Media Keys)
+  pcMedia: {
+    title: "PC Audio",
+    artist: "Target PC",
+    status: "stopped",
+    timer: null
   }
 };
 
@@ -160,6 +168,15 @@ export const elements = {
   pcAudioFmtBadge: document.getElementById("pcAudioFmtBadge"),
   pcAudioLatencyMode: document.getElementById("pcAudioLatencyMode"),
   pcAudioLatencyVal: document.getElementById("pcAudioLatencyVal"),
+
+  // Target PC Media Controls (Play/Pause, Next, Prev, Headphone MediaSession)
+  pcMediaBox: document.getElementById("pcMediaBox"),
+  mediaTrackTitle: document.getElementById("mediaTrackTitle"),
+  mediaTrackArtist: document.getElementById("mediaTrackArtist"),
+  mediaStatusBadge: document.getElementById("mediaStatusBadge"),
+  btnMediaPlayPause: document.getElementById("btnMediaPlayPause"),
+  btnMediaNext: document.getElementById("btnMediaNext"),
+  btnMediaPrev: document.getElementById("btnMediaPrev"),
 
   // Voice Settings & Controls
   modelSelect: document.getElementById("modelSelect"),

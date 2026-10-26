@@ -134,6 +134,41 @@ async def set_routing(data: dict):
     return routing_config
 
 
+@app.get("/api/media/info")
+async def proxy_media_info():
+    """Proxies media track information from Target PC receiver."""
+    import urllib.request
+    target_ip = routing_config.get("target_pc_ip", "127.0.0.1")
+    target_port = routing_config.get("target_pc_port", 8001)
+    url = f"http://{target_ip}:{target_port}/media/info"
+    try:
+        def fetch():
+            req = urllib.request.Request(url, headers={"User-Agent": "VoiceMorph"})
+            with urllib.request.urlopen(req, timeout=1.5) as resp:
+                return json.loads(resp.read().decode())
+        return await asyncio.to_thread(fetch)
+    except Exception:
+        return {"status": "stopped", "title": "PC Audio", "artist": "Target PC", "player": None}
+
+
+@app.post("/api/media/control")
+async def proxy_media_control(payload: dict):
+    """Proxies media control commands to Target PC receiver."""
+    import urllib.request
+    target_ip = routing_config.get("target_pc_ip", "127.0.0.1")
+    target_port = routing_config.get("target_pc_port", 8001)
+    url = f"http://{target_ip}:{target_port}/media/control"
+    try:
+        def post():
+            data = json.dumps(payload).encode()
+            req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json", "User-Agent": "VoiceMorph"})
+            with urllib.request.urlopen(req, timeout=1.5) as resp:
+                return json.loads(resp.read().decode())
+        return await asyncio.to_thread(post)
+    except Exception as e:
+        return {"status": "error", "message": f"Could not contact Target PC: {e}"}
+
+
 @app.get("/api/info")
 async def get_info():
     """Returns system status, active voice model, and runtime audio settings."""

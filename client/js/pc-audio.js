@@ -8,6 +8,7 @@
 
 import { state, elements, logEvent } from './state.js';
 import { getAudioContext } from './audio-core.js';
+import { activateMediaSession, deactivateMediaSession } from './media-session.js';
 
 // ==========================================
 // 1. Web Audio DSP Graph (Call Mode vs Pure Stereo)
@@ -152,6 +153,7 @@ export async function startPcAudioListening() {
       state.pcAudio.isFirstChunk = true;
       state.pcAudio.nextPlayTime = 0;
       updatePcAudioUI(true);
+      activateMediaSession();
       logEvent("🎧 Connected! Target PC audio is streaming in high-definition.", "success");
     };
 
@@ -174,6 +176,7 @@ export async function startPcAudioListening() {
 
     state.pcAudio.ws.onclose = () => {
       state.pcAudio.isListening = false;
+      deactivateMediaSession();
       updatePcAudioUI(false);
       logEvent("Target PC Audio stream disconnected.", "warn");
     };
@@ -190,6 +193,7 @@ export async function startPcAudioListening() {
 
 export function stopPcAudioListening() {
   state.pcAudio.isListening = false;
+  deactivateMediaSession();
   if (state.pcAudio.ws) {
     try { state.pcAudio.ws.close(); } catch(e) {}
     state.pcAudio.ws = null;

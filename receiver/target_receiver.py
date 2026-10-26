@@ -136,6 +136,124 @@ async def get_status():
         "time": time.time()
     }
 
+def get_media_info() -> dict:
+    """Returns current active media track information (title, artist, status)."""
+    if SYSTEM_OS == "Linux":
+        try:
+            out = subprocess.check_output(['busctl', '--user', 'list'], text=True, timeout=1.0)
+            players = [line.split()[0] for line in out.splitlines() if line.split() and line.split()[0].startswith('org.mpris.MediaPlayer2.')]
+            for p in players:
+                try:
+                    status_out = subprocess.check_output(
+                        ['busctl', '--user', 'call', p, '/org/mpris/MediaPlayer2', 'org.freedesktop.DBus.Properties', 'Get', 'ss', 'org.mpris.MediaPlayer2.Player', 'PlaybackStatus'],
+                        text=True, timeout=1.0
+                    )
+                    status = status_out.strip().split()[-1].strip('\"').lower()
+                    meta_out = subprocess.check_output(
+                        ['busctl', '--user', 'call', p, '/org/mpris/MediaPlayer2', 'org.freedesktop.DBus.Properties', 'Get', 'ss', 'org.mpris.MediaPlayer2.Player', 'Metadata'],
+                        text=True, timeout=1.0
+                    )
+                    title = "PC Audio"
+                    artist = p.split('.')[-1]
+                    if '"xesam:title"' in meta_out:
+                        idx = meta_out.find('"xesam:title"')
+                        parts = meta_out[idx:].split('"')
+                        if len(parts) >= 4:
+                            raw = parts[3]
+                            try:
+                                title = raw.encode('latin1').decode('unicode_escape').encode('latin1').decode('utf-8')
+                            except Exception:
+                                title = raw
+                    if '"xesam:artist"' in meta_out:
+                        idx = meta_out.find('"xesam:artist"')
+                        parts = meta_out[idx:].split('"')
+                        if len(parts) >= 4:
+                            raw = parts[3]
+                            try:
+                                artist = raw.encode('latin1').decode('unicode_escape').encode('latin1').decode('utf-8')
+                            except Exception:
+                                artist = raw
+                    return {
+                        "status": status,
+                        "title": title,
+                        "artist": artist,
+                        "player": p
+                    }
+                except Exception:
+                    continue
+        except Exception as e:
+            logger.debug(f"Media info fetch note: {e}")
+
+    return {
+        "status": "stopped",
+        "title": "PC Audio",
+        "artist": "Target PC",
+        "player": None
+    }
+
+def send_media_command(action: str) -> dict:
+    """Sends PlayPause, Next, or Previous to active media players."""
+    action_map = {
+        "play_pause": "PlayPause",
+        "play": "Play",
+        "pause": "Pause",
+        "next": "Next",
+        "previous": "Previous",
+        "prev": "Previous",
+        "stop": "Stop"
+    }
+    mpris_method = action_map.get(action.lower(), "PlayPause")
+
+    if SYSTEM_OS == "Linux":
+        try:
+            out = subprocess.check_output(['busctl', '--user', 'list'], text=True, timeout=1.0)
+            players = [line.split()[0] for line in out.splitlines() if line.split() and line.split()[0].startswith('org.mpris.MediaPlayer2.')]
+            executed = False
+            for p in players:
+                try:
+                    subprocess.check_call(
+                        ['busctl', '--user', 'call', p, '/org/mpris/MediaPlayer2', 'org.mpris.MediaPlayer2.Player', mpris_method],
+                        timeout=1.0
+                    )
+                    executed = True
+                except Exception:
+                    continue
+            if executed:
+                return {"status": "ok", "action": mpris_method, "info": get_media_info()}
+        except Exception as e:
+            logger.warning(f"MPRIS media control note: {e}")
+
+    elif SYSTEM_OS == "Windows":
+        try:
+            import ctypes
+            win_vk_map = {
+                "PlayPause": 0xB3,
+                "Play": 0xB3,
+                "Pause": 0xB3,
+                "Next": 0xB0,
+                "Previous": 0xB1,
+                "Stop": 0xB2
+            }
+            vk = win_vk_map.get(mpris_method, 0xB3)
+            ctypes.windll.user32.keybd_event(vk, 0, 0, 0)
+            ctypes.windll.user32.keybd_event(vk, 0, 2, 0)
+            return {"status": "ok", "action": mpris_method, "info": {"status": "playing", "title": "PC Audio", "artist": "Windows Media"}}
+        except Exception as we:
+            logger.warning(f"Windows media key note: {we}")
+
+    return {"status": "error", "message": "No active media player found"}
+
+@app.get("/media/info")
+async def api_media_info():
+    """Returns current active media player track information."""
+    return await asyncio.to_thread(get_media_info)
+
+@app.post("/media/control")
+async def api_media_control(payload: dict):
+    """Executes media commands: play_pause, next, previous."""
+    action = payload.get("action", "play_pause")
+    return await asyncio.to_thread(send_media_command, action)
+
 @app.post("/audio")
 async def receive_audio_post(data: dict):
     """Receive audio payload over HTTP POST."""

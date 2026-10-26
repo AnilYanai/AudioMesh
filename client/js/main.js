@@ -13,6 +13,7 @@ import { initPttListeners, startRecording, stopRecording } from './ptt.js';
 import { initLiveStreamListeners, toggleLiveStream } from './live-stream.js';
 import { initTargetPcListeners, verifyTargetPC } from './target-pc.js';
 import { initPcAudioListeners, togglePcAudioListening, relinkPcAudioGraph } from './pc-audio.js';
+import { initMediaControls, sendMediaControl, refreshMediaInfo } from './media-session.js';
 import { initRoomCalibratorListeners, startRoomCalibration } from './room-calibrator.js';
 import { initVisualizer } from './visualizer.js';
 import { initUiListeners, setEngineMode, setVocalProfile } from './ui-controls.js';
@@ -22,7 +23,7 @@ import { initUiListeners, setEngineMode, setVocalProfile } from './ui-controls.j
  * Allows inspecting real-time internal state and triggering test routines.
  */
 window.VoiceMorph = {
-  version: "20261026_autowarm_v22",
+  version: "20261026_media_v23",
   state,
   elements,
   getAudioContext,
@@ -34,6 +35,8 @@ window.VoiceMorph = {
   toggleLiveStream,
   verifyTargetPC,
   togglePcAudioListening,
+  sendMediaControl,
+  refreshMediaInfo,
   startRoomCalibration,
   logEvent
 };
@@ -53,6 +56,7 @@ function initApp() {
   initLiveStreamListeners();
   initTargetPcListeners();
   initPcAudioListeners();
+  initMediaControls();
   initRoomCalibratorListeners();
 
   // 3. Connect to Conversion Server WebSocket

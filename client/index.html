@@ -313,6 +313,37 @@
             <span id="btnPcAudioText">Start Listening to PC Audio</span>
           </button>
 
+          <!-- Target PC Media Controller (Play/Pause, Next, Prev & Headphone Remote) -->
+          <div class="pc-media-box" id="pcMediaBox" style="margin-top: 14px; background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; padding: 14px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+              <div style="display: flex; align-items: center; gap: 10px; overflow: hidden;">
+                <span style="font-size: 1.3rem;">🎵</span>
+                <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                  <div id="mediaTrackTitle" style="font-weight: 600; font-size: 0.88rem; color: #f8fafc; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">PC Media Player</div>
+                  <div id="mediaTrackArtist" style="font-size: 0.74rem; color: #94a3b8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Ready to control PC audio</div>
+                </div>
+              </div>
+              <span id="mediaStatusBadge" class="value-badge" style="font-size: 0.68rem; text-transform: uppercase;">READY</span>
+            </div>
+
+            <!-- Media Playback Buttons -->
+            <div style="display: flex; justify-content: center; align-items: center; gap: 18px; margin: 10px 0 6px 0;">
+              <button id="btnMediaPrev" type="button" class="media-ctrl-btn" title="Previous Song (Triple-Tap Earphone)" style="background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.15); color: #f8fafc; width: 44px; height: 44px; border-radius: 50%; font-size: 1.15rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s ease;">
+                ⏮
+              </button>
+              <button id="btnMediaPlayPause" type="button" class="media-ctrl-btn" title="Play / Pause (Single-Tap Earphone)" style="background: linear-gradient(135deg, #6366f1, #8b5cf6); border: none; color: #ffffff; width: 56px; height: 56px; border-radius: 50%; font-size: 1.45rem; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 14px rgba(99, 102, 241, 0.45); transition: all 0.15s ease;">
+                ⏯
+              </button>
+              <button id="btnMediaNext" type="button" class="media-ctrl-btn" title="Next Song (Double-Tap Earphone)" style="background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.15); color: #f8fafc; width: 44px; height: 44px; border-radius: 50%; font-size: 1.15rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s ease;">
+                ⏭
+              </button>
+            </div>
+
+            <div style="text-align: center; font-size: 0.70rem; color: #94a3b8; margin-top: 8px;">
+              🎧 <strong>Headphone Remote:</strong> 1-click Play/Pause • 2-click Next Song • 3-click Prev Song
+            </div>
+          </div>
+
           <div class="pc-volume-control">
             <div class="label-with-value">
               <label for="pcAudioVolume">Earphone Volume</label>
@@ -478,6 +509,6 @@
       }
     };
   </script>
-  <script type="module" src="js/main.js?v=20261026_autowarm_v22"></script>
+  <script type="module" src="js/main.js?v=20261026_media_v23"></script>
 </body>
 </html>
