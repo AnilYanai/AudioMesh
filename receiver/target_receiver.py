@@ -191,6 +191,31 @@ def get_media_info() -> dict:
         "player": None
     }
 
+def get_previous_youtube_url():
+    """Reads Brave's SQLite history to get the URL of the previously played YouTube video."""
+    try:
+        import sqlite3, shutil
+        hist_path = os.path.expanduser('~/.config/BraveSoftware/Brave-Browser/Default/History')
+        if not os.path.exists(hist_path):
+            return None
+        tmp_path = '/tmp/hist_read.db'
+        shutil.copyfile(hist_path, tmp_path)
+        conn = sqlite3.connect(tmp_path)
+        cur = conn.cursor()
+        cur.execute('SELECT url, title FROM urls WHERE url LIKE "%youtube.com/watch%" ORDER BY last_visit_time DESC LIMIT 5;')
+        rows = cur.fetchall()
+        conn.close()
+        try:
+            os.remove(tmp_path)
+        except Exception:
+            pass
+        if len(rows) > 1:
+            # row[0] is current, row[1] is previous!
+            return rows[1][0]
+    except Exception as e:
+        logger.warning(f"History read error: {e}")
+    return None
+
 def send_media_command(action: str) -> dict:
     """Sends PlayPause, Next, or Previous to active media players with smart YouTube fallback."""
     act = action.lower()
@@ -244,7 +269,7 @@ def send_media_command(action: str) -> dict:
                                 executed = True
 
                     elif act in ["prev", "previous", "previoustrack"]:
-                        # 1. Check if player supports CanGoPrevious
+                        # 1. Check if player supports CanGoPrevious (e.g. Spotify, VLC, YouTube Playlist)
                         can_go_prev = False
                         try:
                             cgp_out = subprocess.check_output(
@@ -259,22 +284,33 @@ def send_media_command(action: str) -> dict:
                             subprocess.call(['busctl', '--user', 'call', p, '/org/mpris/MediaPlayer2', 'org.mpris.MediaPlayer2.Player', 'Previous'], timeout=1.0)
                             executed = True
                         else:
-                            # 2. Standalone YouTube video: restart track / seek to beginning (0:00)
-                            meta = subprocess.check_output(
-                                ['busctl', '--user', 'call', p, '/org/mpris/MediaPlayer2', 'org.freedesktop.DBus.Properties', 'Get', 'ss', 'org.mpris.MediaPlayer2.Player', 'Metadata'],
-                                text=True, timeout=0.8
-                            )
-                            idx_t = meta.find('"mpris:trackid"')
-                            if idx_t != -1:
-                                trackid = meta[idx_t:].split('"')[3]
-                                subprocess.call(
-                                    ['busctl', '--user', 'call', p, '/org/mpris/MediaPlayer2', 'org.mpris.MediaPlayer2.Player', 'SetPosition', 'ox', trackid, '0'],
-                                    timeout=0.8
+                            # 2. Standalone YouTube video: navigate to previous video URL from browser history!
+                            prev_url = get_previous_youtube_url()
+                            if prev_url:
+                                logger.info(f"⏮️ Navigating to previous YouTube video: {prev_url}")
+                                subprocess.Popen(
+                                    ["/opt/brave.com/brave/brave-browser", "--profile-directory=Default", "--app-id=agimnkijcaahngcdmfeangaknmldooml", prev_url],
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
                                 )
                                 executed = True
+                            else:
+                                # Fallback: restart track from 0:00
+                                meta = subprocess.check_output(
+                                    ['busctl', '--user', 'call', p, '/org/mpris/MediaPlayer2', 'org.freedesktop.DBus.Properties', 'Get', 'ss', 'org.mpris.MediaPlayer2.Player', 'Metadata'],
+                                    text=True, timeout=0.8
+                                )
+                                idx_t = meta.find('"mpris:trackid"')
+                                if idx_t != -1:
+                                    trackid = meta[idx_t:].split('"')[3]
+                                    subprocess.call(
+                                        ['busctl', '--user', 'call', p, '/org/mpris/MediaPlayer2', 'org.mpris.MediaPlayer2.Player', 'SetPosition', 'ox', trackid, '0'],
+                                        timeout=0.8
+                                    )
+                                    executed = True
 
                     elif act in ["play_pause", "toggle"]:
                         subprocess.call(['busctl', '--user', 'call', p, '/org/mpris/MediaPlayer2', 'org.mpris.MediaPlayer2.Player', 'PlayPause'], timeout=1.0)
+                        logger.info(f"🎧 [Media MPRIS] PlayPause toggled on {p}")
                         executed = True
 
                     elif act == "play":
@@ -284,6 +320,7 @@ def send_media_command(action: str) -> dict:
                         )
                         if 'playing' not in status_out.lower():
                             subprocess.call(['busctl', '--user', 'call', p, '/org/mpris/MediaPlayer2', 'org.mpris.MediaPlayer2.Player', 'PlayPause'], timeout=1.0)
+                            logger.info(f"🎧 [Media MPRIS] Play resumed on {p}")
                         executed = True
 
                     elif act in ["pause", "stop"]:
@@ -293,6 +330,7 @@ def send_media_command(action: str) -> dict:
                         )
                         if 'playing' in status_out.lower():
                             subprocess.call(['busctl', '--user', 'call', p, '/org/mpris/MediaPlayer2', 'org.mpris.MediaPlayer2.Player', 'Pause'], timeout=1.0)
+                            logger.info(f"🎧 [Media MPRIS] Pause applied on {p}")
                         executed = True
 
                 except Exception as pe:
@@ -300,6 +338,8 @@ def send_media_command(action: str) -> dict:
                     continue
 
             if executed:
+                import time
+                time.sleep(0.06)
                 return {"status": "ok", "action": act, "info": get_media_info()}
         except Exception as e:
             logger.warning(f"MPRIS media control note: {e}")

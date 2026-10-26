@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>RVC Mobile Voice Changer</title>
   <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/png" sizes="96x96" href="/icon-96.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+  <link rel="apple-touch-icon" href="/icon-192.png">
   <meta name="theme-color" content="#121214">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -492,7 +495,7 @@
   </div>
 
   <!-- Hidden Media Keeper for mobile OS lock screen and headphone remote media keys -->
-  <audio id="mediaSessionKeeper" src="/silent_keeper.wav" loop playsinline preload="auto" style="position: absolute; width: 0; height: 0; opacity: 0; pointer-events: none;"></audio>
+  <audio id="mediaSessionKeeper" src="/silent_keeper.wav" loop playsinline preload="auto" style="position: absolute; width: 1px; height: 1px; opacity: 0.01; pointer-events: none;"></audio>
 
   <script>
     window.onerror = function(msg, url, line, col, error) {
@@ -512,6 +515,6 @@
       }
     };
   </script>
-  <script type="module" src="js/main.js?v=20261026_remote_v25"></script>
+  <script type="module" src="js/main.js?v=20261026_full_fix_v26"></script>
 </body>
 </html>
