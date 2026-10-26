@@ -88,7 +88,8 @@ export const state = {
     title: "PC Audio",
     artist: "Target PC",
     status: "stopped",
-    timer: null
+    timer: null,
+    internalAction: false
   }
 };
 

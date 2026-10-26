@@ -192,38 +192,115 @@ def get_media_info() -> dict:
     }
 
 def send_media_command(action: str) -> dict:
-    """Sends PlayPause, Next, or Previous to active media players."""
+    """Sends PlayPause, Next, or Previous to active media players with smart YouTube fallback."""
     act = action.lower()
-    if act in ["play_pause", "toggle"]:
-        mpris_method = "PlayPause"
-    elif act == "play":
-        # In Linux browsers (Brave/Chrome), 'Play' is often a no-op, while 'PlayPause' reliably resumes
-        mpris_method = "PlayPause"
-    elif act in ["pause", "stop"]:
-        mpris_method = "Pause"
-    elif act in ["next", "nexttrack"]:
-        mpris_method = "Next"
-    elif act in ["prev", "previous", "previoustrack"]:
-        mpris_method = "Previous"
-    else:
-        mpris_method = "PlayPause"
 
     if SYSTEM_OS == "Linux":
         try:
             out = subprocess.check_output(['busctl', '--user', 'list'], text=True, timeout=1.0)
             players = [line.split()[0] for line in out.splitlines() if line.split() and line.split()[0].startswith('org.mpris.MediaPlayer2.')]
             executed = False
+
             for p in players:
                 try:
-                    subprocess.check_call(
-                        ['busctl', '--user', 'call', p, '/org/mpris/MediaPlayer2', 'org.mpris.MediaPlayer2.Player', mpris_method],
-                        timeout=1.0
-                    )
-                    executed = True
-                except Exception:
+                    if act in ["next", "nexttrack"]:
+                        # 1. Check if the player natively supports CanGoNext (e.g. Spotify, VLC, YouTube Playlist)
+                        can_go_next = False
+                        try:
+                            cgn_out = subprocess.check_output(
+                                ['busctl', '--user', 'call', p, '/org/mpris/MediaPlayer2', 'org.freedesktop.DBus.Properties', 'Get', 'ss', 'org.mpris.MediaPlayer2.Player', 'CanGoNext'],
+                                text=True, timeout=0.5
+                            )
+                            can_go_next = 'true' in cgn_out.lower()
+                        except Exception:
+                            pass
+
+                        if can_go_next:
+                            subprocess.call(['busctl', '--user', 'call', p, '/org/mpris/MediaPlayer2', 'org.mpris.MediaPlayer2.Player', 'Next'], timeout=1.0)
+                            executed = True
+                        else:
+                            # 2. Standalone YouTube video: seek to 0.4s before the end while playing to trigger YouTube Autoplay!
+                            meta = subprocess.check_output(
+                                ['busctl', '--user', 'call', p, '/org/mpris/MediaPlayer2', 'org.freedesktop.DBus.Properties', 'Get', 'ss', 'org.mpris.MediaPlayer2.Player', 'Metadata'],
+                                text=True, timeout=0.8
+                            )
+                            idx_l = meta.find('"mpris:length"')
+                            idx_t = meta.find('"mpris:trackid"')
+                            if idx_l != -1 and idx_t != -1:
+                                length = int(meta[idx_l:].split()[2])
+                                trackid = meta[idx_t:].split('"')[3]
+                                target_pos = max(0, length - 400000)
+                                subprocess.call(
+                                    ['busctl', '--user', 'call', p, '/org/mpris/MediaPlayer2', 'org.mpris.MediaPlayer2.Player', 'SetPosition', 'ox', trackid, str(target_pos)],
+                                    timeout=0.8
+                                )
+                                # Ensure playback is active so it plays through the end and triggers next video
+                                status_out = subprocess.check_output(
+                                    ['busctl', '--user', 'call', p, '/org/mpris/MediaPlayer2', 'org.freedesktop.DBus.Properties', 'Get', 'ss', 'org.mpris.MediaPlayer2.Player', 'PlaybackStatus'],
+                                    text=True, timeout=0.5
+                                )
+                                if 'playing' not in status_out.lower():
+                                    subprocess.call(['busctl', '--user', 'call', p, '/org/mpris/MediaPlayer2', 'org.mpris.MediaPlayer2.Player', 'PlayPause'], timeout=0.5)
+                                executed = True
+
+                    elif act in ["prev", "previous", "previoustrack"]:
+                        # 1. Check if player supports CanGoPrevious
+                        can_go_prev = False
+                        try:
+                            cgp_out = subprocess.check_output(
+                                ['busctl', '--user', 'call', p, '/org/mpris/MediaPlayer2', 'org.freedesktop.DBus.Properties', 'Get', 'ss', 'org.mpris.MediaPlayer2.Player', 'CanGoPrevious'],
+                                text=True, timeout=0.5
+                            )
+                            can_go_prev = 'true' in cgp_out.lower()
+                        except Exception:
+                            pass
+
+                        if can_go_prev:
+                            subprocess.call(['busctl', '--user', 'call', p, '/org/mpris/MediaPlayer2', 'org.mpris.MediaPlayer2.Player', 'Previous'], timeout=1.0)
+                            executed = True
+                        else:
+                            # 2. Standalone YouTube video: restart track / seek to beginning (0:00)
+                            meta = subprocess.check_output(
+                                ['busctl', '--user', 'call', p, '/org/mpris/MediaPlayer2', 'org.freedesktop.DBus.Properties', 'Get', 'ss', 'org.mpris.MediaPlayer2.Player', 'Metadata'],
+                                text=True, timeout=0.8
+                            )
+                            idx_t = meta.find('"mpris:trackid"')
+                            if idx_t != -1:
+                                trackid = meta[idx_t:].split('"')[3]
+                                subprocess.call(
+                                    ['busctl', '--user', 'call', p, '/org/mpris/MediaPlayer2', 'org.mpris.MediaPlayer2.Player', 'SetPosition', 'ox', trackid, '0'],
+                                    timeout=0.8
+                                )
+                                executed = True
+
+                    elif act in ["play_pause", "toggle"]:
+                        subprocess.call(['busctl', '--user', 'call', p, '/org/mpris/MediaPlayer2', 'org.mpris.MediaPlayer2.Player', 'PlayPause'], timeout=1.0)
+                        executed = True
+
+                    elif act == "play":
+                        status_out = subprocess.check_output(
+                            ['busctl', '--user', 'call', p, '/org/mpris/MediaPlayer2', 'org.freedesktop.DBus.Properties', 'Get', 'ss', 'org.mpris.MediaPlayer2.Player', 'PlaybackStatus'],
+                            text=True, timeout=0.5
+                        )
+                        if 'playing' not in status_out.lower():
+                            subprocess.call(['busctl', '--user', 'call', p, '/org/mpris/MediaPlayer2', 'org.mpris.MediaPlayer2.Player', 'PlayPause'], timeout=1.0)
+                        executed = True
+
+                    elif act in ["pause", "stop"]:
+                        status_out = subprocess.check_output(
+                            ['busctl', '--user', 'call', p, '/org/mpris/MediaPlayer2', 'org.freedesktop.DBus.Properties', 'Get', 'ss', 'org.mpris.MediaPlayer2.Player', 'PlaybackStatus'],
+                            text=True, timeout=0.5
+                        )
+                        if 'playing' in status_out.lower():
+                            subprocess.call(['busctl', '--user', 'call', p, '/org/mpris/MediaPlayer2', 'org.mpris.MediaPlayer2.Player', 'Pause'], timeout=1.0)
+                        executed = True
+
+                except Exception as pe:
+                    logger.warning(f"Player {p} command error: {pe}")
                     continue
+
             if executed:
-                return {"status": "ok", "action": mpris_method, "info": get_media_info()}
+                return {"status": "ok", "action": act, "info": get_media_info()}
         except Exception as e:
             logger.warning(f"MPRIS media control note: {e}")
 
@@ -231,17 +308,18 @@ def send_media_command(action: str) -> dict:
         try:
             import ctypes
             win_vk_map = {
-                "PlayPause": 0xB3,
-                "Play": 0xB3,
-                "Pause": 0xB3,
-                "Next": 0xB0,
-                "Previous": 0xB1,
-                "Stop": 0xB2
+                "play_pause": 0xB3,
+                "play": 0xB3,
+                "pause": 0xB3,
+                "next": 0xB0,
+                "previous": 0xB1,
+                "prev": 0xB1,
+                "stop": 0xB2
             }
-            vk = win_vk_map.get(mpris_method, 0xB3)
+            vk = win_vk_map.get(act, 0xB3)
             ctypes.windll.user32.keybd_event(vk, 0, 0, 0)
             ctypes.windll.user32.keybd_event(vk, 0, 2, 0)
-            return {"status": "ok", "action": mpris_method, "info": {"status": "playing", "title": "PC Audio", "artist": "Windows Media"}}
+            return {"status": "ok", "action": act, "info": {"status": "playing", "title": "PC Audio", "artist": "Windows Media"}}
         except Exception as we:
             logger.warning(f"Windows media key note: {we}")
 

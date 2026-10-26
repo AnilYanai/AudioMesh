@@ -1,9 +1,9 @@
 /**
  * @file media-session.js
  * @description Hardware headphone remote integration (Play/Pause, Next Track, Prev Track)
- *              via Web Media Session API and Target PC media player control.
+ *              via Web Media Session API, HTMLMediaElement audio keeper, and Target PC control.
  * @author Mathavan & Antigravity
- * @version 20261026_media_v24
+ * @version 20261026_media_v25
  */
 
 import { state, elements, logEvent } from './state.js';
@@ -26,6 +26,8 @@ export function getMediaSessionKeeper() {
 export function unlockMediaSessionOnUserGesture() {
   const audio = getMediaSessionKeeper();
   if (audio) {
+    audio.muted = false;
+    audio.volume = 1.0;
     audio.play().then(() => {
       logEvent("🎧 Headphone Remote & Lock Screen active!", "success");
     }).catch((err) => {
@@ -34,6 +36,8 @@ export function unlockMediaSessionOnUserGesture() {
   }
 
   setupMediaSessionHandlers();
+  attachAudioKeeperListeners();
+  attachHardwareKeyListeners();
 
   if ('mediaSession' in navigator) {
     navigator.mediaSession.playbackState = "playing";
@@ -47,11 +51,15 @@ export async function activateMediaSession() {
   const audio = getMediaSessionKeeper();
   if (audio && audio.paused) {
     try {
+      audio.muted = false;
+      audio.volume = 1.0;
       await audio.play();
     } catch (e) {}
   }
 
   setupMediaSessionHandlers();
+  attachAudioKeeperListeners();
+  attachHardwareKeyListeners();
 
   if ('mediaSession' in navigator) {
     navigator.mediaSession.playbackState = "playing";
@@ -69,12 +77,74 @@ export function deactivateMediaSession() {
   const audio = getMediaSessionKeeper();
   if (audio && !audio.paused) {
     try {
+      state.pcMedia.internalAction = true;
       audio.pause();
+      setTimeout(() => { state.pcMedia.internalAction = false; }, 300);
     } catch (e) {}
   }
   if ('mediaSession' in navigator) {
     navigator.mediaSession.playbackState = "none";
   }
+}
+
+/**
+ * Attaches direct event listeners to the <audio> element.
+ * On many Android versions, clicking the headphone pause button directly invokes
+ * pause() on the active media element rather than going through MediaSession.
+ */
+export function attachAudioKeeperListeners() {
+  const audio = getMediaSessionKeeper();
+  if (!audio || audio._hasKeeperListeners) return;
+  audio._hasKeeperListeners = true;
+
+  // When OS / Headphone sends hardware pause event to the audio element
+  audio.addEventListener("pause", () => {
+    if (state.pcMedia.internalAction) return;
+    logEvent("🎧 [Headphone Button]: Pause triggered via audio element", "highlight");
+    sendMediaControl("play_pause");
+  });
+
+  // When OS / Headphone sends hardware play event to the audio element
+  audio.addEventListener("play", () => {
+    if (state.pcMedia.internalAction) return;
+    logEvent("🎧 [Headphone Button]: Play triggered via audio element", "highlight");
+    sendMediaControl("play_pause");
+  });
+}
+
+/**
+ * Attaches global keydown listeners for hardware media keys (MediaPlayPause, Next, Prev)
+ * sent by wired and Bluetooth headphones on Android and desktop browsers.
+ */
+export function attachHardwareKeyListeners() {
+  if (window._hasHardwareKeyListeners) return;
+  window._hasHardwareKeyListeners = true;
+
+  const handleKey = (e) => {
+    const key = e.key || e.code || "";
+    const code = e.keyCode || e.which || 0;
+
+    if (key === "MediaPlayPause" || code === 179) {
+      e.preventDefault();
+      logEvent("🎧 [Headphone Keydown]: MediaPlayPause", "highlight");
+      sendMediaControl("play_pause");
+    } else if (key === "MediaTrackNext" || code === 176) {
+      e.preventDefault();
+      logEvent("🎧 [Headphone Keydown]: MediaTrackNext", "highlight");
+      sendMediaControl("next");
+    } else if (key === "MediaTrackPrevious" || code === 177) {
+      e.preventDefault();
+      logEvent("🎧 [Headphone Keydown]: MediaTrackPrevious", "highlight");
+      sendMediaControl("previous");
+    } else if (key === "MediaStop" || code === 178) {
+      e.preventDefault();
+      logEvent("🎧 [Headphone Keydown]: MediaStop", "highlight");
+      sendMediaControl("play_pause");
+    }
+  };
+
+  window.addEventListener("keydown", handleKey, { capture: true });
+  document.addEventListener("keydown", handleKey, { capture: true });
 }
 
 /**
@@ -88,17 +158,21 @@ export function setupMediaSessionHandlers() {
   // Single-Click Earphone Button (Play / Pause / Resume)
   try {
     navigator.mediaSession.setActionHandler("pause", async () => {
-      logEvent("🎧 [Headphone]: Pause / Toggle", "highlight");
+      logEvent("🎧 [Headphone MediaSession]: Pause / Toggle", "highlight");
       await sendMediaControl("play_pause");
     });
   } catch (e) {}
 
   try {
     navigator.mediaSession.setActionHandler("play", async () => {
-      logEvent("🎧 [Headphone]: Play / Resume", "highlight");
+      logEvent("🎧 [Headphone MediaSession]: Play / Resume", "highlight");
       const audio = getMediaSessionKeeper();
       if (audio && audio.paused) {
-        try { await audio.play(); } catch(e) {}
+        try {
+          state.pcMedia.internalAction = true;
+          await audio.play();
+          setTimeout(() => { state.pcMedia.internalAction = false; }, 300);
+        } catch (e) {}
       }
       await sendMediaControl("play_pause");
     });
@@ -106,7 +180,7 @@ export function setupMediaSessionHandlers() {
 
   try {
     navigator.mediaSession.setActionHandler("stop", async () => {
-      logEvent("🎧 [Headphone]: Stop / Toggle", "highlight");
+      logEvent("🎧 [Headphone MediaSession]: Stop / Toggle", "highlight");
       await sendMediaControl("play_pause");
     });
   } catch (e) {}
@@ -114,7 +188,7 @@ export function setupMediaSessionHandlers() {
   // Double-Click Earphone Button (Next Track)
   try {
     navigator.mediaSession.setActionHandler("nexttrack", async () => {
-      logEvent("🎧 [Headphone]: Next Song (Double-Tap)", "highlight");
+      logEvent("🎧 [Headphone MediaSession]: Next Song (Double-Tap)", "highlight");
       await sendMediaControl("next");
     });
   } catch (e) {}
@@ -122,22 +196,22 @@ export function setupMediaSessionHandlers() {
   // Triple-Click Earphone Button (Previous Track)
   try {
     navigator.mediaSession.setActionHandler("previoustrack", async () => {
-      logEvent("🎧 [Headphone]: Previous Song (Triple-Tap)", "highlight");
+      logEvent("🎧 [Headphone MediaSession]: Previous Song (Triple-Tap)", "highlight");
       await sendMediaControl("previous");
     });
   } catch (e) {}
 
-  // Some Bluetooth remotes send seekforward / seekbackward on hold
+  // Bluetooth remotes that send seekforward / seekbackward on hold
   try {
     navigator.mediaSession.setActionHandler("seekforward", async () => {
-      logEvent("🎧 [Headphone]: Seek Forward / Next", "highlight");
+      logEvent("🎧 [Headphone MediaSession]: Seek Forward / Next", "highlight");
       await sendMediaControl("next");
     });
   } catch (e) {}
 
   try {
     navigator.mediaSession.setActionHandler("seekbackward", async () => {
-      logEvent("🎧 [Headphone]: Seek Backward / Prev", "highlight");
+      logEvent("🎧 [Headphone MediaSession]: Seek Backward / Prev", "highlight");
       await sendMediaControl("previous");
     });
   } catch (e) {}
@@ -184,7 +258,7 @@ export async function sendMediaControl(action) {
     if (data.info) {
       updateMediaUI(data.info);
     } else {
-      setTimeout(refreshMediaInfo, 350);
+      setTimeout(refreshMediaInfo, 400);
     }
   } catch (err) {
     logEvent(`Media command error: ${err.message}`, "warn");
@@ -277,6 +351,9 @@ export function initMediaControls() {
       sendMediaControl("previous");
     });
   }
+
+  attachAudioKeeperListeners();
+  attachHardwareKeyListeners();
 
   // Initial fetch of media info
   refreshMediaInfo();
