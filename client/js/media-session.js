@@ -3,56 +3,73 @@
  * @description Hardware headphone remote integration (Play/Pause, Next Track, Prev Track)
  *              via Web Media Session API and Target PC media player control.
  * @author Mathavan & Antigravity
- * @version 20261026_media_v23
+ * @version 20261026_media_v24
  */
 
 import { state, elements, logEvent } from './state.js';
 
-let silentAudioElem = null;
 let mediaPollTimer = null;
 
 /**
- * Returns or creates the hidden silent audio element needed by mobile OS (Android/iOS)
- * to keep the MediaSession active on lock screen and intercept headphone hardware buttons.
+ * Returns the hidden media keeper audio element in the DOM.
+ * @returns {HTMLAudioElement|null}
  */
-function getSilentAudioElement() {
-  if (!silentAudioElem) {
-    silentAudioElem = document.createElement("audio");
-    silentAudioElem.loop = true;
-    silentAudioElem.playsInline = true;
-    silentAudioElem.preload = "auto";
-    // 1-second 44.1kHz silent WAV
-    silentAudioElem.src = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
-  }
-  return silentAudioElem;
+export function getMediaSessionKeeper() {
+  return document.getElementById("mediaSessionKeeper");
 }
 
 /**
- * Unlocks the mobile OS Media Session and binds hardware headphone remote keys.
+ * Synchronously invoked directly inside user gesture (e.g. tap/click on 'Start Listening').
+ * This satisfies the strict mobile browser autoplay policy (Android Chrome & iOS Safari)
+ * and grants Audio Focus so the phone OS routes headphone button events to this page.
  */
-export async function activateMediaSession() {
-  try {
-    const audio = getSilentAudioElement();
-    if (audio.paused) {
-      await audio.play();
-    }
-  } catch (e) {
-    // Autoplay restrictions may require user tap
+export function unlockMediaSessionOnUserGesture() {
+  const audio = getMediaSessionKeeper();
+  if (audio) {
+    audio.play().then(() => {
+      logEvent("🎧 Headphone Remote & Lock Screen active!", "success");
+    }).catch((err) => {
+      logEvent(`Headphone remote unlock notice: ${err.message}`, "warn");
+    });
   }
 
   setupMediaSessionHandlers();
+
+  if ('mediaSession' in navigator) {
+    navigator.mediaSession.playbackState = "playing";
+  }
+}
+
+/**
+ * Activates streaming state and starts periodic polling of track info.
+ */
+export async function activateMediaSession() {
+  const audio = getMediaSessionKeeper();
+  if (audio && audio.paused) {
+    try {
+      await audio.play();
+    } catch (e) {}
+  }
+
+  setupMediaSessionHandlers();
+
+  if ('mediaSession' in navigator) {
+    navigator.mediaSession.playbackState = "playing";
+  }
+
   startMediaPolling();
   refreshMediaInfo();
 }
 
 /**
- * Pauses silent keeper when PC audio is stopped.
+ * Pauses keeper and releases session when PC audio listening stops.
  */
 export function deactivateMediaSession() {
   stopMediaPolling();
-  if (silentAudioElem && !silentAudioElem.paused) {
+  const audio = getMediaSessionKeeper();
+  if (audio && !audio.paused) {
     try {
-      silentAudioElem.pause();
+      audio.pause();
     } catch (e) {}
   }
   if ('mediaSession' in navigator) {
@@ -68,20 +85,33 @@ export function setupMediaSessionHandlers() {
 
   updateMediaSessionMetadata(state.pcMedia.title, state.pcMedia.artist);
 
-  try {
-    navigator.mediaSession.setActionHandler("play", async () => {
-      logEvent("🎧 [Headphone]: Play", "highlight");
-      await sendMediaControl("play");
-    });
-  } catch (e) {}
-
+  // Single-Click Earphone Button (Play / Pause / Resume)
   try {
     navigator.mediaSession.setActionHandler("pause", async () => {
-      logEvent("🎧 [Headphone]: Pause", "highlight");
-      await sendMediaControl("pause");
+      logEvent("🎧 [Headphone]: Pause / Toggle", "highlight");
+      await sendMediaControl("play_pause");
     });
   } catch (e) {}
 
+  try {
+    navigator.mediaSession.setActionHandler("play", async () => {
+      logEvent("🎧 [Headphone]: Play / Resume", "highlight");
+      const audio = getMediaSessionKeeper();
+      if (audio && audio.paused) {
+        try { await audio.play(); } catch(e) {}
+      }
+      await sendMediaControl("play_pause");
+    });
+  } catch (e) {}
+
+  try {
+    navigator.mediaSession.setActionHandler("stop", async () => {
+      logEvent("🎧 [Headphone]: Stop / Toggle", "highlight");
+      await sendMediaControl("play_pause");
+    });
+  } catch (e) {}
+
+  // Double-Click Earphone Button (Next Track)
   try {
     navigator.mediaSession.setActionHandler("nexttrack", async () => {
       logEvent("🎧 [Headphone]: Next Song (Double-Tap)", "highlight");
@@ -89,9 +119,25 @@ export function setupMediaSessionHandlers() {
     });
   } catch (e) {}
 
+  // Triple-Click Earphone Button (Previous Track)
   try {
     navigator.mediaSession.setActionHandler("previoustrack", async () => {
       logEvent("🎧 [Headphone]: Previous Song (Triple-Tap)", "highlight");
+      await sendMediaControl("previous");
+    });
+  } catch (e) {}
+
+  // Some Bluetooth remotes send seekforward / seekbackward on hold
+  try {
+    navigator.mediaSession.setActionHandler("seekforward", async () => {
+      logEvent("🎧 [Headphone]: Seek Forward / Next", "highlight");
+      await sendMediaControl("next");
+    });
+  } catch (e) {}
+
+  try {
+    navigator.mediaSession.setActionHandler("seekbackward", async () => {
+      logEvent("🎧 [Headphone]: Seek Backward / Prev", "highlight");
       await sendMediaControl("previous");
     });
   } catch (e) {}
@@ -124,6 +170,9 @@ export async function sendMediaControl(action) {
     if (elements.btnMediaPlayPause && (action === "play_pause" || action === "play" || action === "pause")) {
       const isCurrentlyPlaying = state.pcMedia.status === "playing";
       elements.btnMediaPlayPause.textContent = isCurrentlyPlaying ? "▶" : "⏸";
+      if ('mediaSession' in navigator) {
+        navigator.mediaSession.playbackState = isCurrentlyPlaying ? "paused" : "playing";
+      }
     }
 
     const res = await fetch("/api/media/control", {
@@ -135,7 +184,7 @@ export async function sendMediaControl(action) {
     if (data.info) {
       updateMediaUI(data.info);
     } else {
-      setTimeout(refreshMediaInfo, 400);
+      setTimeout(refreshMediaInfo, 350);
     }
   } catch (err) {
     logEvent(`Media command error: ${err.message}`, "warn");
@@ -210,18 +259,21 @@ export function stopMediaPolling() {
 export function initMediaControls() {
   if (elements.btnMediaPlayPause) {
     elements.btnMediaPlayPause.addEventListener("click", () => {
+      unlockMediaSessionOnUserGesture();
       sendMediaControl("play_pause");
     });
   }
 
   if (elements.btnMediaNext) {
     elements.btnMediaNext.addEventListener("click", () => {
+      unlockMediaSessionOnUserGesture();
       sendMediaControl("next");
     });
   }
 
   if (elements.btnMediaPrev) {
     elements.btnMediaPrev.addEventListener("click", () => {
+      unlockMediaSessionOnUserGesture();
       sendMediaControl("previous");
     });
   }

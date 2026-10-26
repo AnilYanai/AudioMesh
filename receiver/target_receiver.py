@@ -193,16 +193,20 @@ def get_media_info() -> dict:
 
 def send_media_command(action: str) -> dict:
     """Sends PlayPause, Next, or Previous to active media players."""
-    action_map = {
-        "play_pause": "PlayPause",
-        "play": "Play",
-        "pause": "Pause",
-        "next": "Next",
-        "previous": "Previous",
-        "prev": "Previous",
-        "stop": "Stop"
-    }
-    mpris_method = action_map.get(action.lower(), "PlayPause")
+    act = action.lower()
+    if act in ["play_pause", "toggle"]:
+        mpris_method = "PlayPause"
+    elif act == "play":
+        # In Linux browsers (Brave/Chrome), 'Play' is often a no-op, while 'PlayPause' reliably resumes
+        mpris_method = "PlayPause"
+    elif act in ["pause", "stop"]:
+        mpris_method = "Pause"
+    elif act in ["next", "nexttrack"]:
+        mpris_method = "Next"
+    elif act in ["prev", "previous", "previoustrack"]:
+        mpris_method = "Previous"
+    else:
+        mpris_method = "PlayPause"
 
     if SYSTEM_OS == "Linux":
         try:

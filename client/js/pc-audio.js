@@ -8,7 +8,7 @@
 
 import { state, elements, logEvent } from './state.js';
 import { getAudioContext } from './audio-core.js';
-import { activateMediaSession, deactivateMediaSession } from './media-session.js';
+import { activateMediaSession, deactivateMediaSession, unlockMediaSessionOnUserGesture } from './media-session.js';
 
 // ==========================================
 // 1. Web Audio DSP Graph (Call Mode vs Pure Stereo)
@@ -311,7 +311,11 @@ export function playPcAudioChunk(arrayBuffer) {
 
 export function initPcAudioListeners() {
   if (elements.btnTogglePcAudio) {
-    elements.btnTogglePcAudio.addEventListener("click", togglePcAudioListening);
+    elements.btnTogglePcAudio.addEventListener("click", () => {
+      // Synchronous user activation to grant mobile OS Audio Focus for headphones
+      unlockMediaSessionOnUserGesture();
+      togglePcAudioListening();
+    });
   }
 
   if (elements.pcAudioVolume) {

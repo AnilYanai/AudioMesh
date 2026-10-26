@@ -491,6 +491,9 @@
     </div>
   </div>
 
+  <!-- Hidden Media Keeper for mobile OS lock screen and headphone remote media keys -->
+  <audio id="mediaSessionKeeper" src="/silent_keeper.wav" loop playsinline preload="auto" style="position: absolute; width: 0; height: 0; opacity: 0; pointer-events: none;"></audio>
+
   <script>
     window.onerror = function(msg, url, line, col, error) {
       var logElem = document.getElementById("activityLog");
@@ -509,6 +512,6 @@
       }
     };
   </script>
-  <script type="module" src="js/main.js?v=20261026_media_v23"></script>
+  <script type="module" src="js/main.js?v=20261026_headphone_fix_v24"></script>
 </body>
 </html>
