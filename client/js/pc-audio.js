@@ -49,16 +49,29 @@ export function initPcAudioGraph() {
     state.pcAudio.compressorNode.release.value = 0.150; // 150ms
   }
 
+  // 4. Transparent Brickwall Peak Limiter (for Music Mode): prevents loud speech bursts from clipping mobile DAC
+  if (!state.pcAudio.limiterNode) {
+    state.pcAudio.limiterNode = ctx.createDynamicsCompressor();
+    state.pcAudio.limiterNode.threshold.value = -0.5; // Transparent: only catches peaks above -0.5dB
+    state.pcAudio.limiterNode.knee.value = 0;         // Brickwall
+    state.pcAudio.limiterNode.ratio.value = 20.0;     // Full limiting
+    state.pcAudio.limiterNode.attack.value = 0.001;   // 1ms ultrafast attack
+    state.pcAudio.limiterNode.release.value = 0.050;  // 50ms fast recovery
+  }
+
   relinkPcAudioGraph();
 }
 
 export function relinkPcAudioGraph() {
   if (!state.pcAudio.gainNode || !state.audioContext) return;
+  const ctx = state.audioContext;
 
   try {
     if (state.pcAudio.highpassNode) state.pcAudio.highpassNode.disconnect();
     if (state.pcAudio.presenceNode) state.pcAudio.presenceNode.disconnect();
     if (state.pcAudio.compressorNode) state.pcAudio.compressorNode.disconnect();
+    if (state.pcAudio.limiterNode) state.pcAudio.limiterNode.disconnect();
+    if (state.pcAudio.gainNode) state.pcAudio.gainNode.disconnect();
   } catch (e) {}
 
   if (state.globalAudioMode === "call") {
@@ -67,9 +80,16 @@ export function relinkPcAudioGraph() {
     state.pcAudio.highpassNode.connect(state.pcAudio.presenceNode);
     state.pcAudio.presenceNode.connect(state.pcAudio.compressorNode);
     state.pcAudio.compressorNode.connect(state.pcAudio.gainNode);
+    state.pcAudio.gainNode.connect(ctx.destination);
     state.pcAudio.inputNode = state.pcAudio.highpassNode;
   } else {
-    // 🎵 Music Mode: 100% Pure Untouched Hi-Fi Stereo Bypass -> Gain -> Destination
+    // 🎵 Music Mode: 100% Pure Untouched Hi-Fi Stereo -> Gain -> Transparent Peak Limiter -> Destination
+    if (state.pcAudio.limiterNode) {
+      state.pcAudio.gainNode.connect(state.pcAudio.limiterNode);
+      state.pcAudio.limiterNode.connect(ctx.destination);
+    } else {
+      state.pcAudio.gainNode.connect(ctx.destination);
+    }
     state.pcAudio.inputNode = state.pcAudio.gainNode;
   }
 }
@@ -201,49 +221,82 @@ export function playPcAudioChunk(arrayBuffer) {
   if (frameCount <= 0) return;
 
   const audioBuf = ctx.createBuffer(channels, frameCount, sampleRate);
+  const leftData = audioBuf.getChannelData(0);
+  const rightData = channels === 2 ? audioBuf.getChannelData(1) : null;
 
-  if (channels === 2) {
-    // Interleaved stereo: [L0, R0, L1, R1, ...]
-    const leftData = audioBuf.getChannelData(0);
-    const rightData = audioBuf.getChannelData(1);
-    for (let i = 0; i < frameCount; i++) {
-      leftData[i] = int16Array[i * 2] / 32768.0;
-      rightData[i] = int16Array[i * 2 + 1] / 32768.0;
-    }
-  } else {
-    // Mono
-    const monoData = audioBuf.getChannelData(0);
-    for (let i = 0; i < frameCount; i++) {
-      monoData[i] = int16Array[i] / 32768.0;
+  for (let i = 0; i < frameCount; i++) {
+    leftData[i] = int16Array[i * channels] / 32768.0;
+    if (rightData) {
+      rightData[i] = int16Array[i * channels + 1] / 32768.0;
     }
   }
 
   const now = ctx.currentTime;
   const duration = audioBuf.duration;
+  let needsFadeIn = false;
+  let startAt = 0;
 
-  // Collision-Free Mathematical Gapless Scheduling:
-  // 1. Initial connection startup cushion
+  // 1. Initial Connection / Mode Switch Warm-up:
+  // Starts with an 85ms cushion for the first 35 chunks (~0.75s) to absorb the initial
+  // PipeWire spawn latency (~57ms) and mobile Wi-Fi sleep-wake latency.
   if (state.pcAudio.isFirstChunk) {
-    state.pcAudio.nextPlayTime = now + state.pcAudio.jitterCushionSec;
+    state.pcAudio.startupChunks = 0;
+    const initialCushion = Math.max(state.pcAudio.jitterCushionSec, 0.085);
+    state.pcAudio.nextPlayTime = now + initialCushion;
     state.pcAudio.isFirstChunk = false;
-  }
-  // 2. Buffer Underrun / Starvation (network packet arrived late after audio finished)
-  else if (now > state.pcAudio.nextPlayTime) {
-    state.pcAudio.nextPlayTime = now + state.pcAudio.jitterCushionSec;
-  }
-  // 3. Excess Drift Cap: only if audio buffer drifted > 200ms behind real-time
-  else if (state.pcAudio.nextPlayTime > now + 0.200) {
-    state.pcAudio.nextPlayTime = now + state.pcAudio.jitterCushionSec;
+    needsFadeIn = true;
+    startAt = state.pcAudio.nextPlayTime;
+  } else {
+    state.pcAudio.startupChunks++;
+
+    // Once running smoothly for 35 chunks (~0.75s), seamlessly transition from warm-up cushion to target cushion
+    if (state.pcAudio.startupChunks === 35 && state.pcAudio.jitterCushionSec < 0.085) {
+      state.pcAudio.nextPlayTime = now + state.pcAudio.jitterCushionSec;
+      needsFadeIn = true;
+    }
+
+    // 2. Buffer Underrun / Late Packet (Packet arrived after previous audio ended)
+    if (now > state.pcAudio.nextPlayTime) {
+      const lateBy = now - state.pcAudio.nextPlayTime;
+      if (lateBy < 0.150) {
+        // Minor packet delay (<150ms): play immediately at 'now' with zero artificial gap!
+        startAt = now;
+      } else {
+        // Severe network stall (>150ms): re-cushion at target jitter cushion
+        startAt = now + state.pcAudio.jitterCushionSec;
+      }
+      state.pcAudio.nextPlayTime = startAt;
+      needsFadeIn = true; // Micro-fade prevents step discontinuity click when audio resumes
+    }
+    // 3. Excess Clock Drift: buffer drifted > 200ms behind real-time
+    else if (state.pcAudio.nextPlayTime > now + 0.200) {
+      startAt = now + state.pcAudio.jitterCushionSec;
+      state.pcAudio.nextPlayTime = startAt;
+      needsFadeIn = true;
+    }
+    // 4. Guaranteed Seamless Contiguous Playback (zero gap, zero overlap)
+    else {
+      startAt = state.pcAudio.nextPlayTime;
+    }
   }
 
-  // 4. Guaranteed Non-Overlapping Start Time (strictly contiguous, ZERO clicks)
-  const startAt = state.pcAudio.nextPlayTime;
+  // 5. Gap-Recovery Micro-Fade (1.5ms / ~72 samples)
+  // ONLY applied when recovering from an underrun or initial startup.
+  // Continuous back-to-back chunks remain 100% untouched bit-perfect PCM!
+  if (needsFadeIn) {
+    const fadeSamples = Math.min(72, frameCount);
+    for (let i = 0; i < fadeSamples; i++) {
+      const g = 0.5 * (1 - Math.cos((Math.PI * i) / fadeSamples)); // Smooth raised cosine ramp
+      leftData[i] *= g;
+      if (rightData) rightData[i] *= g;
+    }
+  }
 
   const source = ctx.createBufferSource();
   source.buffer = audioBuf;
   source.connect(state.pcAudio.inputNode);
-
   source.start(startAt);
+
   // Next chunk plays strictly when this one ends: ZERO gaps, ZERO overlapping collisions
   state.pcAudio.nextPlayTime = startAt + duration;
 }

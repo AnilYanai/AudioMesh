@@ -22,7 +22,7 @@ import { initUiListeners, setEngineMode, setVocalProfile } from './ui-controls.j
  * Allows inspecting real-time internal state and triggering test routines.
  */
 window.VoiceMorph = {
-  version: "20261025_declick_sync_v21",
+  version: "20261026_autowarm_v22",
   state,
   elements,
   getAudioContext,

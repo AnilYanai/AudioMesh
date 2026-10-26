@@ -18,7 +18,12 @@ import { state, elements, logEvent } from './state.js';
  */
 export function getAudioContext() {
   if (!state.audioContext) {
-    state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    try {
+      state.audioContext = new AudioCtx({ latencyHint: 'interactive', sampleRate: 48000 });
+    } catch (e) {
+      state.audioContext = new AudioCtx();
+    }
   }
   return state.audioContext;
 }
