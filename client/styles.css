@@ -1575,3 +1575,17 @@ input:checked + .slider:before {
 .hidden {
   display: none !important;
 }
+
+/* Mobile Touch & Haptic Feedback for Media Controls */
+.media-ctrl-btn {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: transform 0.12s ease, opacity 0.12s ease, background-color 0.12s ease;
+}
+
+.media-ctrl-btn:active {
+  transform: scale(0.88) !important;
+  opacity: 0.82;
+}

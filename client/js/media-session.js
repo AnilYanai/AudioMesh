@@ -107,10 +107,11 @@ export function deactivateMediaSession() {
 /**
  * Triggers an explicit PAUSE action from hardware headphone or on-screen UI.
  * Keeps keeper audio element and MediaSession in strict synchronization.
+ * @param {boolean} [skipDebounce=false]
  */
-export async function triggerMediaPause() {
-  if (isDebounced()) return;
-  logEvent("🎧 [Headphone / Remote]: Pause", "highlight");
+export async function triggerMediaPause(skipDebounce = false) {
+  if (!skipDebounce && isDebounced()) return;
+  logEvent("🎧 [Media Remote]: Pause", "highlight");
 
   // Keep keeper audio element in sync (Android uses its state for lock screen UI)
   const audio = getMediaSessionKeeper();
@@ -142,10 +143,11 @@ export async function triggerMediaPause() {
 
 /**
  * Triggers an explicit PLAY / RESUME action from hardware headphone or on-screen UI.
+ * @param {boolean} [skipDebounce=false]
  */
-export async function triggerMediaPlay() {
-  if (isDebounced()) return;
-  logEvent("🎧 [Headphone / Remote]: Play / Resume", "highlight");
+export async function triggerMediaPlay(skipDebounce = false) {
+  if (!skipDebounce && isDebounced()) return;
+  logEvent("🎧 [Media Remote]: Play / Resume", "highlight");
 
   const audio = getMediaSessionKeeper();
   if (audio && audio.paused) {
@@ -175,32 +177,35 @@ export async function triggerMediaPlay() {
 
 /**
  * Toggles playback (Play <=> Pause) based on current state.
+ * @param {boolean} [skipDebounce=false]
  */
-export async function triggerMediaToggle() {
-  if (isDebounced()) return;
+export async function triggerMediaToggle(skipDebounce = false) {
+  if (!skipDebounce && isDebounced()) return;
   const isCurrentlyPlaying = state.pcMedia.status === "playing";
   if (isCurrentlyPlaying) {
-    await triggerMediaPause();
+    await triggerMediaPause(true);
   } else {
-    await triggerMediaPlay();
+    await triggerMediaPlay(true);
   }
 }
 
 /**
  * Triggers NEXT TRACK from headphone double-click or web UI.
+ * @param {boolean} [skipDebounce=false]
  */
-export async function triggerMediaNext() {
-  if (isDebounced()) return;
-  logEvent("🎧 [Headphone / Remote]: Next Track (Double-Tap)", "highlight");
+export async function triggerMediaNext(skipDebounce = false) {
+  if (!skipDebounce && isDebounced()) return;
+  logEvent("🎧 [Media Remote]: Next Track (Double-Tap)", "highlight");
   await sendMediaControl("next");
 }
 
 /**
  * Triggers PREVIOUS TRACK from headphone triple-click or web UI.
+ * @param {boolean} [skipDebounce=false]
  */
-export async function triggerMediaPrev() {
-  if (isDebounced()) return;
-  logEvent("🎧 [Headphone / Remote]: Previous Track (Triple-Tap)", "highlight");
+export async function triggerMediaPrev(skipDebounce = false) {
+  if (!skipDebounce && isDebounced()) return;
+  logEvent("🎧 [Media Remote]: Previous Track (Triple-Tap)", "highlight");
   await sendMediaControl("previous");
 }
 
@@ -428,22 +433,22 @@ export function stopMediaPolling() {
  */
 export function initMediaControls() {
   if (elements.btnMediaPlayPause) {
-    elements.btnMediaPlayPause.addEventListener("click", () => {
-      unlockMediaSessionOnUserGesture();
+    elements.btnMediaPlayPause.addEventListener("click", (e) => {
+      e.preventDefault();
       triggerMediaToggle();
     });
   }
 
   if (elements.btnMediaNext) {
-    elements.btnMediaNext.addEventListener("click", () => {
-      unlockMediaSessionOnUserGesture();
+    elements.btnMediaNext.addEventListener("click", (e) => {
+      e.preventDefault();
       triggerMediaNext();
     });
   }
 
   if (elements.btnMediaPrev) {
-    elements.btnMediaPrev.addEventListener("click", () => {
-      unlockMediaSessionOnUserGesture();
+    elements.btnMediaPrev.addEventListener("click", (e) => {
+      e.preventDefault();
       triggerMediaPrev();
     });
   }
