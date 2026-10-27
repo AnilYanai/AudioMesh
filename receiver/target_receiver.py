@@ -93,11 +93,19 @@ def play_audio_to_mic(pcm_bytes: bytes, sample_rate: int = 16000):
                 )
                 p.communicate(input=pcm_bytes)
         elif SYSTEM_OS == "Windows":
-            # On Windows with sounddevice or PyAudio
+            # On Windows: route audio into 'CABLE Input' so Discord receives it via 'CABLE Output'
             try:
                 import sounddevice as sd
+                dev_id = None
+                try:
+                    for idx, dev in enumerate(sd.query_devices()):
+                        if 'cable input' in dev['name'].lower() and dev['max_output_channels'] > 0:
+                            dev_id = idx
+                            break
+                except Exception:
+                    pass
                 audio_np = np.frombuffer(pcm_bytes, dtype=np.int16).astype(np.float32) / 32768.0
-                sd.play(audio_np, sample_rate)
+                sd.play(audio_np, sample_rate, device=dev_id)
             except Exception as we:
                 logger.warning(f"Windows audio play note: {we}")
     except Exception as e:
@@ -466,8 +474,22 @@ async def websocket_pc_audio(websocket: WebSocket):
                     break
                 await websocket.send_bytes(chunk)
         elif SYSTEM_OS == "Windows":
-            await websocket.send_text(json.dumps({"error": "Windows PC audio streaming coming soon"}))
-            await asyncio.sleep(1)
+            # WASAPI Loopback capture: captures default speaker output in pure 48kHz stereo
+            try:
+                import soundcard as sc
+                loop = asyncio.get_running_loop()
+                spk = sc.default_speaker()
+                with sc.get_microphone(id=str(spk.name), include_loopback=True).recorder(samplerate=48000, channels=2) as mic:
+                    while True:
+                        data = await loop.run_in_executor(None, mic.record, 1024)
+                        if data is None or len(data) == 0:
+                            continue
+                        int16_bytes = (data * 32767.0).astype(np.int16).tobytes()
+                        await websocket.send_bytes(int16_bytes)
+            except Exception as we:
+                logger.warning(f"Windows WASAPI loopback audio error: {we}")
+                await websocket.send_text(json.dumps({"error": f"Windows audio capture error: {we}"}))
+                await asyncio.sleep(1)
     except (WebSocketDisconnect, asyncio.CancelledError):
         pass
     except Exception as e:
