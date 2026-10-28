@@ -61,8 +61,9 @@ export function setVocalProfile(profile, sendWs = true) {
 export function updatePitchLabel(val) {
   const num = parseInt(val);
   if (!elements.pitchValue) return;
-  if (num === 0) elements.pitchValue.textContent = "0 (Natural)";
-  else if (num === 12) elements.pitchValue.textContent = "+12 (Female)";
+  if (num === 0) elements.pitchValue.textContent = "0 (Studio Natural)";
+  else if (num === -12) elements.pitchValue.textContent = "-12 (Deep Male)";
+  else if (num === 12) elements.pitchValue.textContent = "+12 (Bright Female)";
   else elements.pitchValue.textContent = (num > 0 ? `+${num}` : `${num}`);
 }
 
@@ -189,6 +190,42 @@ export function initUiListeners() {
       const val = parseInt(e.target.value);
       logEvent(`Pitch shift changed to ${val}`);
       sendWsJson({ action: "set_config", pitch: val });
+    });
+  }
+
+  // Quick Voice Transform Presets (Deep Male, Natural Studio, Bright Female)
+  const btnPresetMale = document.getElementById("btnPresetMale");
+  const btnPresetNatural = document.getElementById("btnPresetNatural");
+  const btnPresetFemale = document.getElementById("btnPresetFemale");
+
+  if (btnPresetMale) {
+    btnPresetMale.addEventListener("click", () => {
+      if (elements.pitchSlider) {
+        elements.pitchSlider.value = -12;
+        updatePitchLabel(-12);
+        sendWsJson({ action: "set_config", pitch: -12 });
+        logEvent("Set Voice Preset: 🧔 Deep Male (-12 semitones)", "highlight");
+      }
+    });
+  }
+  if (btnPresetNatural) {
+    btnPresetNatural.addEventListener("click", () => {
+      if (elements.pitchSlider) {
+        elements.pitchSlider.value = 0;
+        updatePitchLabel(0);
+        sendWsJson({ action: "set_config", pitch: 0 });
+        logEvent("Set Voice Preset: 🎙️ Studio Natural (0 semitones)", "highlight");
+      }
+    });
+  }
+  if (btnPresetFemale) {
+    btnPresetFemale.addEventListener("click", () => {
+      if (elements.pitchSlider) {
+        elements.pitchSlider.value = 12;
+        updatePitchLabel(12);
+        sendWsJson({ action: "set_config", pitch: 12 });
+        logEvent("Set Voice Preset: 👧 Bright Female (+12 semitones)", "highlight");
+      }
     });
   }
 

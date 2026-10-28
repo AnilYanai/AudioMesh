@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>RVC Mobile Voice Changer</title>
+  <title>AudioMesh - Distributed Audio Network &amp; Studio</title>
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" sizes="96x96" href="/icon-96.png">
   <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
@@ -11,7 +11,7 @@
   <meta name="theme-color" content="#121214">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="stylesheet" href="styles.css?v=20261026_touch_v27">
+  <link rel="stylesheet" href="styles.css?v=20261028_audiomesh_v28">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
@@ -21,10 +21,10 @@
     <!-- Header -->
     <header class="header">
       <div class="logo-group">
-        <span class="icon">✨</span>
+        <span class="icon">🌐</span>
         <div>
-          <h1>VoiceMorph</h1>
-          <p class="subtitle">RVC AI Voice Changer</p>
+          <h1>AudioMesh</h1>
+          <p class="subtitle">Distributed Audio Network &amp; Studio</p>
         </div>
       </div>
       <div id="connectionStatus" class="status-badge disconnected">
@@ -160,14 +160,14 @@
 
     <!-- Main Controls Mode -->
     <div class="mode-selector">
-      <button id="modePtt" class="mode-btn active" type="button">
-        <span>📻</span> Walkie-Talkie
+      <button id="modeTarget" class="mode-btn active" type="button">
+        <span>🎧</span> Audio Mesh Hub
+      </button>
+      <button id="modePtt" class="mode-btn" type="button">
+        <span>📻</span> Push-to-Talk Mic
       </button>
       <button id="modeLive" class="mode-btn" type="button">
-        <span>🔴</span> Live Stream
-      </button>
-      <button id="modeTarget" class="mode-btn" type="button">
-        <span>🖥️</span> PC Virtual Mic
+        <span>🔴</span> Live Broadcast Mic
       </button>
     </div>
 
@@ -180,7 +180,7 @@
     </div>
 
     <!-- Push To Talk Interaction Section -->
-    <div id="pttSection" class="ptt-container">
+    <div id="pttSection" class="ptt-container hidden">
       <button id="pttButton" class="ptt-btn" type="button">
         <div class="ptt-glow"></div>
         <div class="ptt-inner">
@@ -212,7 +212,7 @@
     </div>
 
     <!-- Target PC Virtual Mic Setup Section -->
-    <div id="targetSection" class="target-container hidden">
+    <div id="targetSection" class="target-container">
       <div class="target-card">
         <div class="target-card-header">
           <div class="target-title-group">
@@ -298,8 +298,8 @@
             <div class="pc-audio-title-group">
               <span class="pc-audio-icon">🎧</span>
               <div>
-                <h4>Hear PC Audio on Phone</h4>
-                <p class="pc-audio-sub">Stream Discord, Spotify, or YouTube to your phone</p>
+                <h4>Multi-Device Wireless Audio Hub</h4>
+                <p class="pc-audio-sub">Stream PC Sound, Discord, Movies &amp; Games to multiple phones in sync</p>
               </div>
             </div>
             <div class="pc-audio-badges">
@@ -309,6 +309,11 @@
                 <span id="pcAudioBadgeText">Muted</span>
               </div>
             </div>
+          </div>
+
+          <div style="background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: 8px; padding: 6px 10px; margin-bottom: 12px; font-size: 0.72rem; color: #a5b4fc; display: flex; align-items: center; gap: 8px;">
+            <span>📡</span>
+            <span><strong>Audio Mesh Active:</strong> Connect multiple phones on Wi-Fi to listen simultaneously!</span>
           </div>
 
           <button id="btnTogglePcAudio" class="action-btn listen-btn" type="button">
@@ -397,15 +402,29 @@
         </select>
       </div>
 
-      <!-- Pitch Shift Slider -->
+      <!-- Pitch Shift Slider & Quick Transform Presets -->
       <div class="control-row">
         <div class="label-with-value">
-          <label for="pitchSlider">Pitch Shift</label>
-          <span id="pitchValue" class="value-badge">+12 (Female)</span>
+          <label for="pitchSlider">Pitch Shift (Voice Transform)</label>
+          <span id="pitchValue" class="value-badge">+12 (Bright Female)</span>
         </div>
+
+        <!-- 3 Quick Presets: Deep Male, Natural Studio, Bright Female -->
+        <div class="voice-presets-grid" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin: 8px 0 10px 0;">
+          <button id="btnPresetMale" type="button" class="preset-chip" style="background: rgba(59, 130, 246, 0.12); border: 1px solid rgba(59, 130, 246, 0.28); color: #60a5fa; padding: 7px 4px; border-radius: 8px; font-size: 0.74rem; font-weight: 600; cursor: pointer; text-align: center; transition: all 0.15s ease;">
+            🧔 Deep Male (-12)
+          </button>
+          <button id="btnPresetNatural" type="button" class="preset-chip" style="background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.15); color: #f8fafc; padding: 7px 4px; border-radius: 8px; font-size: 0.74rem; font-weight: 600; cursor: pointer; text-align: center; transition: all 0.15s ease;">
+            🎙️ Studio (0)
+          </button>
+          <button id="btnPresetFemale" type="button" class="preset-chip" style="background: rgba(236, 72, 153, 0.12); border: 1px solid rgba(236, 72, 153, 0.28); color: #f472b6; padding: 7px 4px; border-radius: 8px; font-size: 0.74rem; font-weight: 600; cursor: pointer; text-align: center; transition: all 0.15s ease;">
+            👧 Female (+12)
+          </button>
+        </div>
+
         <input type="range" id="pitchSlider" min="-12" max="24" value="12" step="1" class="styled-slider">
         <div class="slider-scale">
-          <span>-12</span>
+          <span>-12 (Male)</span>
           <span>0 (Natural)</span>
           <span class="highlight">+12 (Female)</span>
           <span>+24</span>
@@ -515,6 +534,6 @@
       }
     };
   </script>
-  <script type="module" src="js/main.js?v=20261026_touch_v27"></script>
+  <script type="module" src="js/main.js?v=20261028_audiomesh_v28"></script>
 </body>
 </html>

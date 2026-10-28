@@ -23,7 +23,7 @@ import { initUiListeners, setEngineMode, setVocalProfile } from './ui-controls.j
  * Allows inspecting real-time internal state and triggering test routines.
  */
 window.VoiceMorph = {
-  version: "20261026_touch_v27",
+  version: "20261028_audiomesh_v28",
   state,
   elements,
   getAudioContext,

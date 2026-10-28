@@ -1589,3 +1589,14 @@ input:checked + .slider:before {
   transform: scale(0.88) !important;
   opacity: 0.82;
 }
+
+/* AudioMesh Preset Chips */
+.preset-chip {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+.preset-chip:active {
+  transform: scale(0.92);
+  opacity: 0.8;
+}

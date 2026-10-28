@@ -1,6 +1,6 @@
 {
-  "name": "VoiceMorph - RVC Voice Changer",
-  "short_name": "VoiceMorph",
+  "name": "AudioMesh - Distributed Audio Network & Studio",
+  "short_name": "AudioMesh",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0b0c10",
